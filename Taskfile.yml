@@ -1,0 +1,15 @@
+version: '3'
+
+# Local secrets (DHI_TOKEN) come from the git-ignored .env when present; CI sets them in the environment.
+dotenv: ['.env']
+
+tasks:
+  up:
+    desc: Create or converge the kind platform; returns once every Argo CD Application is stable
+    cmds:
+      - ./scripts/platform-up.sh
+
+  down:
+    desc: Delete the kind platform and its isolated kubeconfig
+    cmds:
+      - ./scripts/platform-down.sh

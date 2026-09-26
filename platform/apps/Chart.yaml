@@ -1,0 +1,5 @@
+apiVersion: v2
+name: root
+description: App-of-apps of the harborlab platform.
+type: application
+version: 0.1.0

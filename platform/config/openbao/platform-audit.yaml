@@ -1,0 +1,7 @@
+# Read-only identity for platform audits: `read` on secret/data/platform/* and sys/mounts.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-audit
+  namespace: openbao
+automountServiceAccountToken: false

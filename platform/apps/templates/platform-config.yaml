@@ -1,0 +1,21 @@
+# Cluster-wide configuration that needs the CRDs of the other Applications; retries until they exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-config
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.revision }}
+    path: platform/config
+    directory:
+      recurse: true
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true

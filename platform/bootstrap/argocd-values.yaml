@@ -1,0 +1,9 @@
+# Bootstrap GitOps controller, installed by Helm; everything else is an Application of `root`.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+configs:
+  params:
+    # TLS terminates at the Cilium Gateway.
+    server.insecure: true

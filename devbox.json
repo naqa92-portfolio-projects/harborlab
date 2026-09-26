@@ -9,7 +9,9 @@
     "crane@0.21.9",
     "jq@1.8.2",
     "curl@8.17.0",
-    "openssl@latest"
+    "openssl@latest",
+    "go-task@3.53.1",
+    "gitleaks@8.30.1"
   ],
   "shell": {
     "init_hook": [],

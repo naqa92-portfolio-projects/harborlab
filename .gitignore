@@ -1,2 +1,5 @@
 .env
 .prd/
+# Isolated kubeconfig, local CA and OpenBao keys: generated at runtime, never committed.
+.kube/
+.local/

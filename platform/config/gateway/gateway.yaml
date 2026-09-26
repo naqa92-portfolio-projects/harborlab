@@ -1,0 +1,43 @@
+# Single HTTPS entry point on the node's host network (port 443), published on 127.0.0.1:443 by kind.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-nip-io
+  namespace: gateway
+spec:
+  secretName: wildcard-nip-io-tls
+  dnsNames:
+    - "*.127.0.0.1.nip.io"
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: harborlab-ca
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: platform
+  namespace: gateway
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.127.0.0.1.nip.io"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: wildcard-nip-io-tls
+      allowedRoutes:
+        namespaces:
+          from: All

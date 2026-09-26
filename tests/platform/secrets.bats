@@ -11,7 +11,14 @@ SECRET_STORE=openbao
 
 # One entry per platform credential:
 #   "<KV v2 path under mount secret/>|<field>|<namespace>/<Kubernetes Secret>|<Secret key>"
-PLATFORM_CREDENTIALS=()
+# "-|-" as Secret and key: no workload consumes the credential in the cluster yet.
+PLATFORM_CREDENTIALS=(
+  "platform/harbor-admin|password|harbor/harbor-admin|HARBOR_ADMIN_PASSWORD"
+  "platform/harbor-db|username|harbor/harbor-db-credentials|username"
+  "platform/harbor-db|password|harbor/harbor-db-credentials|password"
+  "platform/harbor-robot-dt-bridge|username|-|-"
+  "platform/harbor-robot-dt-bridge|password|-|-"
+)
 
 fail() {
   echo "$*" >&2
@@ -74,6 +81,7 @@ openbao_audit() {
 
   for credential in "${PLATFORM_CREDENTIALS[@]}"; do
     IFS='|' read -r path _ secret_ref key <<<"$credential"
+    [ "$secret_ref" != - ] || continue
     namespace="${secret_ref%%/*}"
     secret="${secret_ref#*/}"
 

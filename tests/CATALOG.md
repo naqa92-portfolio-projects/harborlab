@@ -74,6 +74,66 @@ M1 interface assumed by `tests/platform/lifecycle.bats` (CAT-001, CAT-002),
   environment of `devbox run`; the value is a grep pattern read from stdin, never in argv or
   output. A `.gitleaks.toml` at the repository root is used when present.
 
+M2 interface assumed by `tests/platform/harbor_configure.bats` (CAT-003),
+`tests/platform/registry_mirror.bats` (CAT-004) and the M2 lines of `PLATFORM_CREDENTIALS` in
+`tests/platform/secrets.bats` (CAT-024):
+- Deployment: ArgoCD Application `harbor` (Synced, Healthy; `task up` still converges), Helm
+  release `harbor` in namespace `harbor`, workloads labelled `app=harbor` (chart default). Database:
+  CNPG Cluster `harbor/harbor-db`, `instances: 1`, phase `Cluster in healthy state`,
+  `bootstrap.initdb.secret.name: harbor-db-credentials`; ConfigMap `harbor/harbor-core` key
+  `POSTGRESQL_HOST` is `harbor-db-rw` (or its FQDN).
+- Endpoint: `https://harbor.127.0.0.1.nip.io` through the Cilium Gateway; tests trust the CA in
+  Secret `gateway/wildcard-nip-io-tls` key `ca.crt`. Admin user `admin`, password in Secret
+  `harbor/harbor-admin` key `HARBOR_ADMIN_PASSWORD` (chart `existingSecretAdminPassword`); the chart's
+  own `harbor-core` Secret is no longer read by tests.
+- Credentials (OpenBao KV v2 → ExternalSecret through `ClusterSecretStore/openbao`), seeded once by
+  `task up` and never overwritten, except robots written by `task harbor:configure`:
+  | OpenBao path | Fields | Kubernetes Secret (keys) |
+  |---|---|---|
+  | `secret/platform/harbor-admin` | `password` | `harbor/harbor-admin` (`HARBOR_ADMIN_PASSWORD`) |
+  | `secret/platform/harbor-db` | `username`, `password` | `harbor/harbor-db-credentials` (`username`, `password`, type `kubernetes.io/basic-auth`) |
+  | `secret/platform/harbor-robot-dt-bridge` | `username` (= `robot$dt-bridge`), `password` | none until dt-bridge (M6) — `-\|-` in `PLATFORM_CREDENTIALS` |
+- `task harbor:configure` (Taskfile, run from the repository root under `devbox run`) exits 0 and,
+  when nothing changes, prints one line per category ending in `<category>: already in place` for
+  `projects`, `proxy caches`, `replication rules`, `robots`, `immutability`, `retention`, `webhooks`,
+  `deployment security`. It never prints the admin password or a robot secret. A run on a
+  configured Harbor changes nothing in the admin API (projects + metadata, registries, replication
+  policies, robots, immutable rules, retention policies, webhook policies; `creation_time`,
+  `update_time`, `repo_count`, `chart_count`, `status` ignored) nor the KV version of a robot path.
+- Proxy caches, public projects, one registry endpoint each:
+  | Project | Endpoint name | Type | URL |
+  |---|---|---|---|
+  | `dockerhub-proxy` | `dockerhub` | `docker-hub` | `https://hub.docker.com` |
+  | `quay-proxy` | `quay` | `quay` | `https://quay.io` |
+  | `ghcr-proxy` | `ghcr` | `github-ghcr` | `https://ghcr.io` |
+  | `k8s-proxy` | `k8s` | `docker-registry` | `https://registry.k8s.io` |
+  | `dhi-proxy` | `dhi` | `docker-registry` | `https://dhi.io` (credential held by Harbor, sourced from OpenBao) |
+- Governed projects `golden` and `apps`: public, not proxy caches, and each has
+  - deployment security: metadata `prevent_vul=true`, `severity=critical`, `auto_scan=true`
+    (cosign content trust is not required: Sigstore bundles arrive as OCI referrers, ADR 0001);
+  - an enabled immutable rule, repositories `**` (`repoMatches`), tags `excludes` `sha256-*` so later
+    attestations can update the referrers fallback index;
+  - a retention policy with at least one rule and a `Schedule` trigger with a cron;
+  - an enabled webhook policy `dt-bridge`, target type `http`, address
+    `http://dt-bridge.dt-bridge.svc.cluster.local:8080/harbor/events` (placeholder until M6), event
+    types including `PUSH_ARTIFACT` and `REPLICATION`;
+  - a pull-replication policy from endpoint `ghcr`: `golden-from-ghcr` (name filter
+    `naqa92-portfolio-projects/harborlab/golden/**`) and `apps-from-ghcr`
+    (`naqa92-portfolio-projects/harborlab/apps/**`), enabled, `dest_namespace` the project,
+    `dest_namespace_replace_count: -1`, trigger `scheduled`, tag filter absent, `**`, or a `matches`
+    brace pattern listing `sha256-*`.
+- Robot `robot$dt-bridge`: system level, enabled, `duration: -1`, permissions on exactly `golden`
+  and `apps`, actions limited to `pull`, `read`, `list`. The credential in OpenBao obtains a
+  registry token from `/service/token` (HTTP 200); a wrong secret gets 401.
+- Mirror test images (layers shared with no platform image, checked against the node's layer set
+  captured before the pull): `docker.io/library/busybox:1.36.1`, `quay.io/libpod/busybox:1.30.1`,
+  `ghcr.io/containerd/busybox:1.36`, `registry.k8s.io/pause:3.9`, `dhi.io/busybox:1.37.0-debian13`.
+  Pods run in namespace `registry-mirror-test` (created by the test). The dhi.io platform digest is
+  resolved from the index served by `dhi-proxy` (anonymous), never with `DHI_TOKEN`.
+- Fallback: the test pauses automated sync on Applications `root` then `harbor`, scales the
+  `app=harbor` Deployments and StatefulSets to 0 (CNPG pods stay), and restores replicas and sync
+  policies in teardown. containerd must fall back upstream when the Gateway has no Harbor backend.
+
 Public-repo rules, binding for every test:
 - No secret, token, kubeconfig, private key or `.env` content is committed. `DHI_TOKEN` is read
   from the environment only; cluster credentials (Harbor, Grafana, DT API key) are read from their
@@ -92,8 +152,8 @@ Public-repo rules, binding for every test:
 | CAT-000 | — (M0 spike) | M0 | live | create | On the spike kind cluster: a keyless-signed, attested GHCR image replicated into Harbor passes `cosign verify` and `cosign verify-attestation` (CycloneDX, SPDX, SLSA provenance) on its Harbor reference; a pod on that reference is admitted by the spike ImageValidatingPolicy while an unsigned image on the same Harbor project is denied; a pull through the containerd mirror lands in the Harbor proxy cache, and still succeeds with Harbor scaled to 0. | `tests/spike/m0.bats > "replicated image verifies on its Harbor reference"`<br>`tests/spike/m0.bats > "ImageValidatingPolicy admits the replicated image and denies an unsigned one"`<br>`tests/spike/m0.bats > "containerd mirror serves through Harbor proxy cache and falls back upstream"` |
 | CAT-001 | 1 | M1 | live | create | From a down state (no kind cluster, no isolated kubeconfig — the closest reproducible stand-in for a clean machine), `devbox run -- task up` exits 0; right after exit every `applications.argoproj.io` is `Synced` and `Healthy`, and each Application's `status.health.lastTransitionTime` and `status.operationState.finishedAt` are at least 60 s before the task's exit time (proves the 60 s stability wait happened). | `tests/platform/lifecycle.bats > "task up exits 0 with every ArgoCD Application Synced and Healthy for 60s"` |
 | CAT-002 | 2 | M1 | live | create | `devbox run -- task down` exits 0; `kind get clusters` no longer lists the harborlab cluster and the isolated kubeconfig file no longer exists; a following `task up` exits 0 with every Application Synced and Healthy. | `tests/platform/lifecycle.bats > "task down removes the cluster and the isolated kubeconfig"`<br>`tests/platform/lifecycle.bats > "task up succeeds again after task down"` |
-| CAT-003 | 3 | M2 | live | create | `task harbor:configure` run twice: the second run exits 0 and its output reports "already in place" for each of projects, proxy caches, replication rules, robots, immutability, retention, webhooks and deployment security; a Harbor API snapshot (projects + metadata, registries, replication policies, robot accounts, immutable rules, retention policies, webhook policies) is identical before and after the second run. | `tests/platform/harbor_configure.bats > "second harbor:configure run reports every category already in place"`<br>`tests/platform/harbor_configure.bats > "second harbor:configure run leaves Harbor state unchanged"` |
-| CAT-004 | 4 | M2 | live | create | For each upstream, a pod pulls a small pinned image absent from the node cache (removed with `crictl rmi` in the kind node); the pod runs and, within 240 s (Harbor stores a proxied platform manifest 20–200 s after the pull and never guarantees a tag), the Harbor API returns the artifact whose digest is the image's platform manifest digest for the node architecture (`crane digest --platform linux/<arch>`) in the matching proxy-cache project; the artifact is never looked up by tag. Each test image shares no layer (config `rootfs.diff_ids`) with any other image on the node, asserted before the pull, because containerd does not fetch a layer it already holds and Harbor then never caches the artifact. Then Harbor is scaled to 0, the image is removed from the node again, and the pod re-pulls and runs through the upstream fallback; Harbor is scaled back in teardown. The dhi.io case relies on the credential configured in the cluster; the test never reads `DHI_TOKEN`. | `tests/platform/registry_mirror.bats > "docker.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "quay.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "ghcr.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "registry.k8s.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "dhi.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "pulls fall back upstream when Harbor is scaled to 0"` |
+| CAT-003 | 3 | M2 | live | create | Precondition: Harbor is the ArgoCD Application `harbor`, on CNPG Cluster `harbor-db`. `task harbor:configure` run twice: the second run exits 0 and its output reports "already in place" for each of projects, proxy caches, replication rules, robots, immutability, retention, webhooks and deployment security, without printing the admin password or a robot secret; a Harbor API snapshot (projects + metadata, registries, replication policies, robot accounts, immutable rules, retention policies, webhook policies) plus the OpenBao KV version of each robot credential is identical before and after the run, and holds the configuration of the M2 interface (non-vacuous); each robot credential stored in OpenBao authenticates on Harbor's token service and a wrong one is refused. | `tests/platform/harbor_configure.bats > "second harbor:configure run reports every category already in place"`<br>`tests/platform/harbor_configure.bats > "second harbor:configure run leaves Harbor state unchanged"` |
+| CAT-004 | 4 | M2 | live | create | For each upstream, a pod pulls a small pinned image absent from the node cache (removed with `crictl rmi` in the kind node); the pod runs and, within 240 s (Harbor stores a proxied platform manifest 20–200 s after the pull and never guarantees a tag), the Harbor API returns the artifact whose digest is the image's platform manifest digest for the node architecture (`crane digest --platform linux/<arch>`) in the matching proxy-cache project; the artifact is never looked up by tag. Each test image shares no layer (`rootfs.diff_ids`) with any image on the node, compared against the node's layer set captured before the pull, because containerd does not fetch a layer it already holds and Harbor then never caches the artifact (the dhi.io config cannot be read without credentials or without going through Harbor, which would itself fill the cache, so the pulled image's layers are compared after the pull). Then Harbor is scaled to 0 (ArgoCD automated sync paused), the anonymous-upstream images are removed from the node again, and their pods re-pull and run through the upstream fallback; Harbor and sync are restored in teardown. The dhi.io case relies on the credential configured in Harbor; the test never reads `DHI_TOKEN`; its fallback is not asserted, since dhi.io refuses anonymous pulls and the node holds no dhi.io credential. | `tests/platform/registry_mirror.bats > "docker.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "quay.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "ghcr.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "registry.k8s.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "dhi.io pull is served through its Harbor proxy cache"`<br>`tests/platform/registry_mirror.bats > "pulls fall back upstream when Harbor is scaled to 0"` |
 | CAT-005 | 5 | M3 | live | create | For `ghcr.io/<owner>/harborlab/golden/{python,java}` from the latest `main` build: `cosign verify` and `cosign verify-attestation --type cyclonedx`, `--type spdxjson`, `--type slsaprovenance1` pass with `--certificate-oidc-issuer https://token.actions.githubusercontent.com` and an identity regexp bound to this repository's `golden.yml` on `refs/heads/main`; the same verification with another repository's identity fails; the latest successful `golden.yml` run on `main` (via `gh api`) has its DHI base signature verification step concluded `success`, and the base digest recorded in the SLSA provenance verifies against DHI's public signing key. | `tests/supply-chain/golden_images.bats > "golden python is signed with CycloneDX, SPDX and SLSA attestations by this repo's workflow"`<br>`tests/supply-chain/golden_images.bats > "golden java is signed with CycloneDX, SPDX and SLSA attestations by this repo's workflow"`<br>`tests/supply-chain/golden_images.bats > "golden image verification fails against a foreign identity"`<br>`tests/supply-chain/golden_images.bats > "golden build verified the DHI base signature"` |
 | CAT-006 | 6 | M3 (golden), M5 (apps) | live | create | Same signature + CycloneDX + SPDX + SLSA verification as CAT-005/CAT-007, run against the Harbor references `harbor.127.0.0.1.nip.io/golden/{python,java}` and `harbor.127.0.0.1.nip.io/apps/{dt-bridge,hello-java}` (local CA trusted), after replication. | `tests/supply-chain/harbor_replicated.bats > "replicated golden images verify on their Harbor reference"`<br>`tests/supply-chain/harbor_replicated.bats > "replicated app images verify on their Harbor reference"` |
 | CAT-007 | 7 | M5 | unit, live | create | Unit: every workflow calling `build-image.yml` is a single job made of one `uses:` line plus non-security inputs (no cosign, syft, trivy, attest or signing step, no `id-token` beyond what the call needs); each app Dockerfile's `FROM` is a catalog golden image and holds no security instruction; `build-image.yml` runs Trivy with `--vex oci`. Live: the app images on GHCR verify (signature, CycloneDX, SPDX, SLSA) against the `build-image.yml` identity, and the latest app build run has its Trivy scan step concluded `success`. | `tests/ci/app_contract.bats > "app workflows are a single uses line to build-image.yml"`<br>`tests/ci/app_contract.bats > "app Dockerfiles only need FROM a golden image"`<br>`tests/ci/app_contract.bats > "build-image.yml scans with Trivy using VEX from OCI"`<br>`tests/supply-chain/app_images.bats > "app images are signed and attested by build-image.yml"`<br>`tests/supply-chain/app_images.bats > "app build ran the VEX-aware Trivy scan"` |
@@ -117,8 +177,9 @@ Public-repo rules, binding for every test:
 | CAT-025 | 25 | M9 | unit | create | `README.md`, `docs/ARCHITECTURE.md`, `docs/THREAT-MODEL.md`, `docs/DEMO.md`, `docs/ROADMAP.md` exist and are non-empty; `docs/adr/` holds one ADR per decision, matched by title: Kyverno CEL-only, Kubescape over Trivy Operator + Falco, Dependency-Track + dt-bridge, harbor-cli over Terraform, transparent mirror + trust tiers, keyless signing. "In English" is checked heuristically (no paragraph dominated by French stop words), a partial proof. | `tests/docs/docs.bats > "required documents exist"`<br>`tests/docs/docs.bats > "one ADR per structuring decision"`<br>`tests/docs/docs.bats > "documents are written in English"` |
 
 No criterion is skipped. Partial proofs, reported as such at the merge gate: CAT-001 (a down
-state stands in for a clean machine), CAT-013 ("every PR" over time), CAT-025 (English detected
-heuristically).
+state stands in for a clean machine), CAT-004 (dhi.io fallback with Harbor at 0 not asserted:
+dhi.io requires credentials the node does not hold), CAT-013 ("every PR" over time), CAT-025
+(English detected heuristically).
 
 ## Démo
 

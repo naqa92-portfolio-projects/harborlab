@@ -12,17 +12,21 @@ TEST_NAMESPACE=registry-mirror-test
 # Harbor stores a proxied platform manifest 20-200 s after the pull and never guarantees a tag.
 CACHE_WAIT_SECONDS=240
 
-# "<image>|<proxy-cache project>|<repository in the project>|<keep-alive: sleep or entrypoint>"
+# dhi.io refuses anonymous pulls. containerd's CRI resolver hands pod credentials only to the host
+# of the image reference, so the Harbor mirror is still reached anonymously and only the upstream
+# fallback authenticates, with this ExternalSecret-owned pull secret.
+DHI_PULL_SECRET=dhi-pull
+
+# "<image>|<proxy-cache project>|<repository in the project>|<keep-alive: sleep or entrypoint>|<pull secret or ->"
 # Small pinned images whose layers are shared with no other image the platform runs.
 declare -gA PROXY_CASES=(
-  [docker.io]="docker.io/library/busybox:1.36.1|dockerhub-proxy|library/busybox|sleep"
-  [quay.io]="quay.io/libpod/busybox:1.30.1|quay-proxy|libpod/busybox|sleep"
-  [ghcr.io]="ghcr.io/containerd/busybox:1.36|ghcr-proxy|containerd/busybox|sleep"
-  [registry.k8s.io]="registry.k8s.io/pause:3.9|k8s-proxy|pause|entrypoint"
-  [dhi.io]="dhi.io/busybox:1.37.0-debian13|dhi-proxy|busybox|sleep"
+  [docker.io]="docker.io/library/busybox:1.36.1|dockerhub-proxy|library/busybox|sleep|-"
+  [quay.io]="quay.io/libpod/busybox:1.30.1|quay-proxy|libpod/busybox|sleep|-"
+  [ghcr.io]="ghcr.io/containerd/busybox:1.36|ghcr-proxy|containerd/busybox|sleep|-"
+  [registry.k8s.io]="registry.k8s.io/pause:3.9|k8s-proxy|pause|entrypoint|-"
+  [dhi.io]="dhi.io/busybox:1.37.0-debian13|dhi-proxy|busybox|sleep|$DHI_PULL_SECRET"
 )
-# dhi.io needs credentials the node does not hold, so only anonymous upstreams can fall back.
-FALLBACK_UPSTREAMS=(docker.io quay.io ghcr.io registry.k8s.io)
+FALLBACK_UPSTREAMS=(docker.io quay.io ghcr.io registry.k8s.io dhi.io)
 
 fail() {
   echo "$*" >&2
@@ -101,9 +105,26 @@ node_layers() {
   done | sort -u
 }
 
+# The dhi.io pull secret must be a dockerconfigjson for dhi.io, delivered by External Secrets from
+# OpenBao; its value is checked by jq and never printed.
+assert_pull_secret() {
+  local secret="$1" owner
+  run kubectl -n "$TEST_NAMESPACE" get secret "$secret" -o json
+  [ "$status" -eq 0 ] || fail "pull secret $TEST_NAMESPACE/$secret not found"
+  [ "$(jq -r .type <<<"$output")" = kubernetes.io/dockerconfigjson ] ||
+    fail "pull secret $TEST_NAMESPACE/$secret is not of type kubernetes.io/dockerconfigjson"
+  jq -e '.data[".dockerconfigjson"] // "" | @base64d | fromjson | .auths["dhi.io"]
+    | ((.auth // "") != "") or ((.password // "") != "")' <<<"$output" >/dev/null 2>&1 ||
+    fail "pull secret $TEST_NAMESPACE/$secret holds no credential for dhi.io"
+  owner="$(jq -r '.metadata.ownerReferences[]? | select(.kind == "ExternalSecret" and .controller == true) | .name' <<<"$output")"
+  [ -n "$owner" ] || fail "pull secret $TEST_NAMESPACE/$secret is not owned by an ExternalSecret"
+}
+
 start_pod() {
-  local name="$1" image="$2" keep_alive="$3" command=""
+  local name="$1" image="$2" keep_alive="$3" pull_secret="$4" command="" pull_secrets=""
   [ "$keep_alive" = sleep ] && command='      command: ["sleep", "3600"]'
+  [ "$pull_secret" != - ] && pull_secrets="  imagePullSecrets:
+    - name: $pull_secret"
   kubectl apply -f - >/dev/null <<EOF
 apiVersion: v1
 kind: Pod
@@ -112,6 +133,7 @@ metadata:
   namespace: $TEST_NAMESPACE
 spec:
   terminationGracePeriodSeconds: 0
+$pull_secrets
   containers:
     - name: probe
       image: $image
@@ -133,9 +155,10 @@ source_platform_digest() {
 }
 
 assert_pull_served_through_proxy() {
-  local upstream="$1" image project repository keep_alive platform_digest encoded artifact pod layer cached deadline
-  IFS='|' read -r image project repository keep_alive <<<"${PROXY_CASES[$upstream]}"
+  local upstream="$1" image project repository keep_alive pull_secret platform_digest encoded artifact pod layer cached deadline
+  IFS='|' read -r image project repository keep_alive pull_secret <<<"${PROXY_CASES[$upstream]}"
   pod="mirror-${project%-proxy}"
+  [ "$pull_secret" = - ] || assert_pull_secret "$pull_secret"
 
   harbor_get "/projects/$project"
   [ "$HTTP_CODE" = 200 ] || fail "proxy-cache project $project not readable anonymously on Harbor (HTTP $HTTP_CODE)"
@@ -153,7 +176,7 @@ assert_pull_served_through_proxy() {
   remove_from_node "$image"
   node_layers >"$BATS_TEST_TMPDIR/node-layers-before.txt"
 
-  start_pod "$pod" "$image" "$keep_alive"
+  start_pod "$pod" "$image" "$keep_alive" "$pull_secret"
   run kubectl -n "$TEST_NAMESPACE" wait "pod/$pod" --for=condition=Ready --timeout=180s
   [ "$status" -eq 0 ] || fail "pod pulling $image through the mirror is not Ready: $output"
 
@@ -201,6 +224,7 @@ assert_pull_served_through_proxy() {
 @test "pulls fall back upstream when Harbor is scaled to 0" {
   run kubectl -n argocd get applications.argoproj.io harbor
   [ "$status" -eq 0 ] || fail "ArgoCD Application harbor not found: $output"
+  assert_pull_secret "$DHI_PULL_SECRET"
 
   # Argo CD self-heal would scale Harbor back up: automated sync is paused, parent first.
   for app in root harbor; do
@@ -221,14 +245,14 @@ assert_pull_served_through_proxy() {
   [ "$output" != Pong ] || fail "Harbor still answers after scaling to 0"
 
   for upstream in "${FALLBACK_UPSTREAMS[@]}"; do
-    IFS='|' read -r image project _ keep_alive <<<"${PROXY_CASES[$upstream]}"
+    IFS='|' read -r image project _ keep_alive pull_secret <<<"${PROXY_CASES[$upstream]}"
     kubectl -n "$TEST_NAMESPACE" delete pod "fallback-${project%-proxy}" --ignore-not-found --wait=true >/dev/null
     remove_from_node "$image"
-    start_pod "fallback-${project%-proxy}" "$image" "$keep_alive"
+    start_pod "fallback-${project%-proxy}" "$image" "$keep_alive" "$pull_secret"
   done
 
   for upstream in "${FALLBACK_UPSTREAMS[@]}"; do
-    IFS='|' read -r image project _ _ <<<"${PROXY_CASES[$upstream]}"
+    IFS='|' read -r image project _ _ _ <<<"${PROXY_CASES[$upstream]}"
     run kubectl -n "$TEST_NAMESPACE" wait "pod/fallback-${project%-proxy}" --for=condition=Ready --timeout=300s
     [ "$status" -eq 0 ] || fail "$image did not fall back upstream with Harbor at 0: $output"
   done

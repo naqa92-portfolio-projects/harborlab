@@ -18,6 +18,8 @@ PLATFORM_CREDENTIALS=(
   "platform/harbor-db|password|harbor/harbor-db-credentials|password"
   "platform/harbor-robot-dt-bridge|username|-|-"
   "platform/harbor-robot-dt-bridge|password|-|-"
+  "platform/dhi|username|registry-mirror-test/dhi-pull|.dockerconfigjson"
+  "platform/dhi|token|registry-mirror-test/dhi-pull|.dockerconfigjson"
 )
 
 fail() {

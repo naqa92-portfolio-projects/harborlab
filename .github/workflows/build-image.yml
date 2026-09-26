@@ -1,7 +1,8 @@
 name: build-image
 
 # Platform-owned image build: a caller only names the image and its build context. The Dockerfile's
-# first FROM must be digest-pinned; a dhi.io base has its DHI signature verified before the build.
+# final FROM, the image's base, must be digest-pinned; a dhi.io base has its DHI signature verified
+# before the build. Earlier stages are build-only and are not the base.
 on:
   workflow_call:
     inputs:
@@ -52,9 +53,10 @@ jobs:
       - name: Read the pinned base image
         id: base
         run: |
-          from="$(awk 'toupper($1) == "FROM" { for (i = 2; i <= NF; i++) if ($i !~ /^--/) { print $i; exit } }' "$CONTEXT/Dockerfile")"
+          from="$(awk 'toupper($1) == "FROM" { image = ""; for (i = 2; i <= NF; i++) if ($i !~ /^--/) { image = $i; break } }
+            END { print image }' "$CONTEXT/Dockerfile")"
           if [[ ! "$from" =~ ^([^@]+)@(sha256:[0-9a-f]{64})$ ]]; then
-            echo "::error file=$CONTEXT/Dockerfile::the first FROM is not pinned by digest: $from"
+            echo "::error file=$CONTEXT/Dockerfile::the final FROM is not pinned by digest: $from"
             exit 1
           fi
           name="${BASH_REMATCH[1]}"

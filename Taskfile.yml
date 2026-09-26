@@ -9,6 +9,11 @@ tasks:
     cmds:
       - ./scripts/platform-up.sh
 
+  harbor:configure:
+    desc: Converge the Harbor configuration (proxy caches, governed projects, replication, robots, tag rules, webhooks)
+    cmds:
+      - ./scripts/harbor-configure.sh
+
   down:
     desc: Delete the kind platform and its isolated kubeconfig
     cmds:

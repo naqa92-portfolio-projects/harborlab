@@ -220,6 +220,53 @@ ensure_openbao() {
     bao_root 'bao kv put -mount=secret platform/local-ca - >/dev/null'
 }
 
+# Prints one alphanumeric random string per requested length, one per line.
+random_strings() {
+  local length value
+  for length in "$@"; do
+    value="$(openssl rand -base64 96 | tr -dc 'A-Za-z0-9')"
+    printf '%s\n' "${value:0:$length}"
+  done
+}
+
+# Writes the JSON object read on stdin to secret/<path> only when the path does not exist yet, so a
+# credential is generated once per cluster and never rotated by a later `task up`.
+seed_once() {
+  bao_root 'bao kv get -mount=secret "$1" >/dev/null 2>&1 </dev/null || bao kv put -mount=secret "$1" - >/dev/null' "$1"
+}
+
+openbao_has() {
+  bao_root 'bao kv get -mount=secret "$1" >/dev/null 2>&1' "$1" </dev/null
+}
+
+# Generated values reach jq and OpenBao through pipes only, never through argv.
+seed_credentials() {
+  log "seeding platform credentials into OpenBao (existing entries are kept)"
+  # Harbor requires upper case, lower case and digits in the admin password.
+  random_strings 24 | jq -Rn '{password: (input + "Aa1")}' | seed_once platform/harbor-admin
+  random_strings 32 | jq -Rn '{username: "harbor", password: input}' | seed_once platform/harbor-db
+  random_strings 32 | jq -Rn '{password: input}' | seed_once platform/harbor-registry
+  # Lengths required by the chart: 16 for the component and encryption secrets, 32 for CSRF.
+  random_strings 16 32 16 16 16 | jq -Rn '[inputs] as $v
+    | {secret: $v[0], CSRF_KEY: $v[1], JOBSERVICE_SECRET: $v[2], REGISTRY_HTTP_SECRET: $v[3], secretKey: $v[4]}' |
+    seed_once platform/harbor-internal
+
+  if ! openbao_has platform/harbor-token-service; then
+    (umask 077 && openssl req -x509 -newkey rsa:4096 -nodes -days 3650 -subj "/CN=harbor-token-service" \
+      -keyout "$WORK/token.key" -out "$WORK/token.crt" 2>/dev/null)
+    jq -n --rawfile crt "$WORK/token.crt" --rawfile key "$WORK/token.key" '{"tls.crt": $crt, "tls.key": $key}' |
+      seed_once platform/harbor-token-service
+    rm -f "$WORK/token.key" "$WORK/token.crt"
+  fi
+
+  # The dhi.io credential comes from the environment (git-ignored .env), read by jq.
+  if ! openbao_has platform/dhi; then
+    [ -n "${DHI_USERNAME:-}" ] && [ -n "${DHI_TOKEN:-}" ] ||
+      die "DHI_USERNAME and DHI_TOKEN must be set (git-ignored .env) to seed OpenBao secret/platform/dhi"
+    jq -n '{username: env.DHI_USERNAME, token: env.DHI_TOKEN}' | seed_once platform/dhi
+  fi
+}
+
 # Exits once every Application has been Synced and Healthy, with a succeeded last sync, for
 # STABLE_SECONDS; the timestamps are the ones Argo CD persists in each Application.
 wait_for_convergence() {
@@ -268,5 +315,7 @@ ensure_cilium
 ensure_argocd
 ensure_root_application
 ensure_openbao
+seed_credentials
 wait_for_convergence
+"$REPO_ROOT/scripts/harbor-configure.sh"
 log "platform ready (kubeconfig: $PLATFORM_KUBECONFIG)"

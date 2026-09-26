@@ -89,7 +89,7 @@ ensure_harbor() {
   if [ -z "$password" ]; then
     password="$(openssl rand -base64 24 | tr -d '/+=')Aa1"
   fi
-  (umask 077 && jq -n --arg p "$password" '{harborAdminPassword: $p}' >"$WORK/harbor-secret-values.json")
+  (umask 077 && printf '%s' "$password" | jq -Rs '{harborAdminPassword: .}' >"$WORK/harbor-secret-values.json")
   log "installing Harbor chart $HARBOR_CHART_VERSION"
   helm upgrade --install harbor harbor --repo https://helm.goharbor.io --version "$HARBOR_CHART_VERSION" \
     --namespace harbor --values "$SPIKE_DIR/harbor-values.yaml" --values "$WORK/harbor-secret-values.json" \

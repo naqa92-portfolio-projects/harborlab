@@ -158,15 +158,30 @@ EOF
 @test "containerd mirror serves through Harbor proxy cache and falls back upstream" {
   node="$(kind_node)"
   [ -n "$node" ] || fail "no node for kind cluster $CLUSTER"
+  platform="linux/$(kubectl get node "$node" -o jsonpath='{.status.nodeInfo.architecture}')"
+
+  platform_digest="$(crane digest --platform "$platform" "$MIRROR_IMAGE")"
+  [[ "$platform_digest" == sha256:* ]] || fail "no $platform manifest digest for $MIRROR_IMAGE"
+  mapfile -t mirror_layers < <(crane config --platform "$platform" "$MIRROR_IMAGE" | jq -r '.rootfs.diff_ids[]')
+  [ "${#mirror_layers[@]}" -gt 0 ] || fail "no layer diff_id in the $platform config of $MIRROR_IMAGE"
+  cache_artifact="/projects/dockerhub-proxy/repositories/library%252Fbusybox/artifacts/$platform_digest"
 
   harbor_admin DELETE /projects/dockerhub-proxy/repositories/library%252Fbusybox
   [ "$HTTP_CODE" = 200 ] || [ "$HTTP_CODE" = 404 ] || fail "cannot clear the proxy cache (HTTP $HTTP_CODE)"
-  harbor_get /projects/dockerhub-proxy/repositories/library%252Fbusybox/artifacts/1.36.1
-  [ "$HTTP_CODE" = 404 ] || fail "busybox:1.36.1 still cached in dockerhub-proxy (HTTP $HTTP_CODE)"
+  harbor_get "$cache_artifact"
+  [ "$HTTP_CODE" = 404 ] || fail "artifact $platform_digest still cached in dockerhub-proxy (HTTP $HTTP_CODE)"
 
   docker exec "$node" crictl rmi "$MIRROR_IMAGE" >/dev/null 2>&1 || true
   run docker exec "$node" crictl inspecti "$MIRROR_IMAGE"
   [ "$status" -ne 0 ] || fail "$MIRROR_IMAGE still present on node $node"
+
+  node_layers="$(for image_id in $(docker exec "$node" crictl images -q); do
+    docker exec "$node" crictl inspecti -o json "$image_id" | jq -r '.info.imageSpec.rootfs.diff_ids[]'
+  done)"
+  for layer in "${mirror_layers[@]}"; do
+    ! grep -qxF "$layer" <<<"$node_layers" ||
+      fail "$MIRROR_IMAGE layer $layer is shared with another image on node $node: containerd would not fetch it through Harbor"
+  done
 
   kubectl apply -f - <<'EOF'
 apiVersion: v1
@@ -191,16 +206,21 @@ EOF
   run kubectl -n spike-mirror wait pod/busybox-mirror --for=condition=Ready --timeout=180s
   [ "$status" -eq 0 ] || fail "pod pulling $MIRROR_IMAGE through the mirror is not Ready: $output"
 
+  # Harbor stores a proxied platform manifest 20-200 s after the pull and never guarantees a tag,
+  # so the artifact is looked up by digest for up to 240 s.
   cached=""
-  for _ in $(seq 1 30); do
-    harbor_get /projects/dockerhub-proxy/repositories/library%252Fbusybox/artifacts/1.36.1
+  deadline=$((SECONDS + 240))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    harbor_get "$cache_artifact"
     if [ "$HTTP_CODE" = 200 ]; then
       cached=yes
       break
     fi
-    sleep 2
+    sleep 5
   done
-  [ "$cached" = yes ] || fail "busybox:1.36.1 never appeared in Harbor project dockerhub-proxy"
+  [ "$cached" = yes ] ||
+    fail "artifact $platform_digest ($MIRROR_IMAGE, $platform) never appeared in Harbor project dockerhub-proxy within 240 s"
+  [ "$(jq -r .digest "$HTTP_BODY")" = "$platform_digest" ] || fail "dockerhub-proxy returned another digest for $platform_digest"
 
   kubectl -n harbor get deploy,statefulset -o json |
     jq -r '.items[] | "\(.kind | ascii_downcase)/\(.metadata.name)\t\(.spec.replicas)"' \

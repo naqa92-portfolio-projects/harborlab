@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "hostRules": [
+    {
+      "matchHost": "dhi.io",
+      "username": "{{ secrets.DHI_USERNAME }}",
+      "password": "{{ secrets.DHI_TOKEN }}"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "DHI bases of the golden images: digest bumps rebuild golden python and java",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["dhi.io/**"],
+      "groupName": "DHI golden bases"
+    }
+  ]
+}

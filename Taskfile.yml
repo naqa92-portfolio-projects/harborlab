@@ -29,3 +29,23 @@ tasks:
     desc: Delete the kind platform and its isolated kubeconfig
     cmds:
       - ./scripts/platform-down.sh
+
+  catalog:validate:
+    desc: 'Validate the golden image catalog (default images/catalog.yaml; task catalog:validate -- <file>)'
+    cmds:
+      - ./scripts/catalog.sh validate {{.CLI_ARGS}}
+
+  catalog:generate:
+    desc: Write the Kyverno params ConfigMap and the catalog doc from images/catalog.yaml
+    cmds:
+      - ./scripts/catalog.sh generate
+
+  catalog:check:
+    desc: Fail when the generated catalog files differ from what catalog:generate would write
+    cmds:
+      - ./scripts/catalog.sh check
+
+  lint:
+    desc: 'Platform lint of the repository, or of another git work tree (task lint -- <dir>)'
+    cmds:
+      - ./scripts/lint.sh {{.CLI_ARGS}}

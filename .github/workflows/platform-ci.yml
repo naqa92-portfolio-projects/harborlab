@@ -1,0 +1,33 @@
+name: platform-ci
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: platform-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # Full history: gitleaks scans every commit of the pull request.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - name: Platform lint
+        env:
+          # Enables zizmor's online audits (impostor commits, known-vulnerable actions).
+          GH_TOKEN: ${{ github.token }}
+        run: devbox run -- task lint
+
+      - name: Catalog drift check
+        run: devbox run -- task catalog:check

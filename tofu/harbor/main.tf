@@ -11,11 +11,15 @@ locals {
     dhi       = { project = "dhi-proxy", type = "docker-registry", url = "https://dhi.io" }
   }
 
-  # Governed projects, pulled from GHCR. No tag filter: the cosign referrers fallback tags
-  # (sha256-*) are replicated with the images.
+  # Golden repositories in images/catalog.yaml order, the catalog being their single source.
+  golden_names = distinct([for image in yamldecode(file("${path.module}/../../images/catalog.yaml")).images : image.name])
+
+  # Governed projects, pulled from GHCR. Harbor's github-ghcr adapter cannot list GHCR repositories:
+  # a wildcard name filter fails every execution, so each filter names its repositories. No tag
+  # filter: the cosign referrers fallback tags (sha256-*) are replicated with the images.
   governed_projects = {
-    golden = { ghcr_filter = "naqa92-portfolio-projects/harborlab/golden/**" }
-    apps   = { ghcr_filter = "naqa92-portfolio-projects/harborlab/apps/**" }
+    golden = { ghcr_filter = "naqa92-portfolio-projects/harborlab/golden/{${join(",", local.golden_names)}}" }
+    apps   = { ghcr_filter = "naqa92-portfolio-projects/harborlab/apps/{dt-bridge,hello-java}" }
   }
 
   # Harbor cron expressions carry a leading seconds field.

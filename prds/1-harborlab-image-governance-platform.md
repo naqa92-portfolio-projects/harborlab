@@ -44,7 +44,7 @@
 
 ## State
 phase: 2
-milestone: 4/10
+milestone: 5/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
@@ -69,7 +69,7 @@ demo:
 - [x] M1 — Foundation: devbox, Taskfile, local CA, kind with containerd mirrors, Cilium + Gateway API, cert-manager, ArgoCD app-of-apps, OpenBao + ESO, CNPG; `task up`/`task down` converge (dépend de M0)
 - [x] M2 — Registry: Harbor on CNPG deployed by ArgoCD, `task harbor:configure` idempotent (proxy caches, `golden`/`apps` replication from GHCR, robots in OpenBao, immutability, retention, deployment security, webhooks) (dépend de M1)
 - [x] M3 — Image factory: `images/catalog.yaml` + generators, golden Python/Java on DHI, reusable `build-image.yml` (SBOM CDX+SPDX, SLSA, keyless cosign, Trivy `--vex oci`), platform CI hygiene and lint, Renovate (dépend de M2)
-- [ ] M4 — Admission: Kyverno CEL policies per trust tier fed by the catalog, PSA restricted, digest mutation, `kyverno test` + Chainsaw E2E in GitHub Actions (dépend de M3)
+- [x] M4 — Admission: Kyverno CEL policies per trust tier fed by the catalog, PSA restricted, digest mutation, `kyverno test` + Chainsaw E2E in GitHub Actions (dépend de M3)
 - [ ] M5 — Golden-path apps: `dt-bridge` skeleton and `hello-java` built through the reusable workflow and deployed by ArgoCD in a workload namespace (dépend de M4)
 - [ ] M6 — Vulnerability management: Dependency-Track 5.1 on CNPG, Harbor webhook → `dt-bridge` → DT SBOM upload, DHI OpenVEX → CycloneDX VEX conversion, pytest coverage (dépend de M5)
 - [ ] M7 — Runtime: Kubescape operator (scan, CIS, runtime threat detection, VEX generation) with runtime OpenVEX forwarded to DT (dépend de M6)

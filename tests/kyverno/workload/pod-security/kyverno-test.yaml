@@ -1,0 +1,19 @@
+# A workload Namespace is labelled Pod Security `restricted` by the mutating policy.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-pod-security
+policies:
+  - ../../../../policies/workload/pod-security.yaml
+resources:
+  - ../resources/namespace.yaml
+variables: ../values.yaml
+context: ../context.yaml
+results:
+  - policy: workload-pod-security
+    isMutatingPolicy: true
+    kind: Namespace
+    resources:
+      - new-workload
+    patchedResources: ../patched/namespace.yaml
+    result: pass

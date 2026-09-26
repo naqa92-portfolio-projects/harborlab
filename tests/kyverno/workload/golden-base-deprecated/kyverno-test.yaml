@@ -1,0 +1,31 @@
+# One policy per suite: the kyverno CLI deadlocks when two ImageValidatingPolicies evaluate one resource.
+# CEL policies report `fail`, never `warn`: the deprecated base fails this Warn/Audit policy (admission
+# with a warning is proven by Chainsaw); every other case passes it.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-golden-base-deprecated
+policies:
+  - ../../../../policies/workload/golden-base-deprecated.yaml
+resources:
+  - ../resources/pods.yaml
+variables: ../values.yaml
+context: ../context.yaml
+results:
+  - policy: workload-golden-base-deprecated
+    isImageValidatingPolicy: true
+    kind: Pod
+    resources:
+      - workload-test/deprecated-base
+    result: fail
+  - policy: workload-golden-base-deprecated
+    isImageValidatingPolicy: true
+    kind: Pod
+    resources:
+      - workload-test/compliant
+      - workload-test/non-harbor-registry
+      - workload-test/eol-base
+      - workload-test/unknown-base
+      - workload-test/no-sbom
+      - workload-test/missing-labels
+    result: pass

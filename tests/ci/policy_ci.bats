@@ -4,7 +4,7 @@
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 POLICY_WORKFLOW=.github/workflows/policies.yml
-WORKLOAD_KYVERNO_TEST=tests/kyverno/workload/kyverno-test.yaml
+KYVERNO_SUITES=tests/kyverno
 CHAINSAW_WORKLOAD=tests/chainsaw/workload
 PROD_GOLDEN_PARAMS=policies/params/golden-images.yaml
 PROD_REGISTRY_PARAMS=policies/params/registries.yaml
@@ -77,6 +77,19 @@ fixture_base_digest() {
   echo "${BASH_REMATCH[1]}"
 }
 
+# "<policy name>|<suite file>" per kyverno test suite. A suite loads exactly one policy: the kyverno CLI
+# deadlocks when two ImageValidatingPolicies evaluate the same resource.
+suite_policies() {
+  local suite count policy_file
+  while IFS= read -r -d '' suite; do
+    count="$(yq '.policies | length' "$suite")" || { fail "${suite#"$REPO_ROOT/"} is not valid YAML"; return 1; }
+    [ "$count" -eq 1 ] || { fail "${suite#"$REPO_ROOT/"} loads $count policies instead of one"; return 1; }
+    policy_file="$(dirname "$suite")/$(yq '.policies[0]' "$suite")"
+    [ -f "$policy_file" ] || { fail "${suite#"$REPO_ROOT/"} loads a missing policy file: $policy_file"; return 1; }
+    echo "$(yq '.metadata.name' "$policy_file")|${suite#"$REPO_ROOT/"}"
+  done < <(find "$REPO_ROOT/$KYVERNO_SUITES" -name kyverno-test.yaml -print0 | sort -z)
+}
+
 version_at_least() {
   [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]
 }
@@ -114,16 +127,22 @@ version_at_least() {
 }
 
 @test "every deny and warn case of criteria 9-10 has a kyverno test and a Chainsaw case" {
-  results="$(yq -o=json -I=0 '.results[]' "$REPO_ROOT/$WORKLOAD_KYVERNO_TEST")" ||
-    fail "$WORKLOAD_KYVERNO_TEST is not valid YAML"
+  suites="$(suite_policies)" || return 1
+  for entry in "${POLICIES[@]}"; do
+    IFS='|' read -r _ _ name _ <<<"$entry"
+    count="$(grep -c "^$name|" <<<"$suites" || true)"
+    [ "$count" -eq 1 ] || fail "$count kyverno test suites under $KYVERNO_SUITES load $name, expected one"
+  done
   for case in "${CASES[@]}"; do
     IFS='|' read -r name policy <<<"$case"
     [ -f "$REPO_ROOT/$CHAINSAW_WORKLOAD/$name/chainsaw-test.yaml" ] ||
       fail "no Chainsaw case $CHAINSAW_WORKLOAD/$name/chainsaw-test.yaml"
     [ -n "$policy" ] || continue
+    suite="$(grep "^$policy|" <<<"$suites" | cut -d'|' -f2)"
+    results="$(yq -o=json -I=0 '.results[]' "$REPO_ROOT/$suite")" || fail "$suite is not valid YAML"
     jq -e --arg policy "$policy" --arg resource "workload-test/$name" \
       'select(.policy == $policy and .result == "fail" and ((.resources // []) | index($resource) != null))' \
-      <<<"$results" >/dev/null || fail "$WORKLOAD_KYVERNO_TEST expects no fail of $policy for $name"
+      <<<"$results" >/dev/null || fail "$suite expects no fail of $policy for $name"
   done
 
   # Kyverno CEL policy types only (Decision 6): no ClusterPolicy or Policy under policies/.
@@ -187,7 +206,15 @@ version_at_least() {
   [ "$(list_value "$REPO_ROOT/$E2E_REGISTRY_PARAMS" platform)" = "$prod_platform" ] ||
     fail "$E2E_REGISTRY_PARAMS platform allow-list differs from $PROD_REGISTRY_PARAMS"
 
-  # kyverno test contexts hold the E2E params verbatim and no mocked image data.
+  # kyverno test contexts hold the E2E params verbatim and no mocked image data; every suite reads the
+  # context of its tier (tests/kyverno/<tier>/context.yaml).
+  while IFS= read -r -d '' suite; do
+    tier="${suite#"$REPO_ROOT/$KYVERNO_SUITES/"}"
+    tier="${tier%%/*}"
+    context="$(realpath -m "$(dirname "$suite")/$(yq '.context // ""' "$suite")")"
+    [ "$context" = "$REPO_ROOT/$KYVERNO_SUITES/$tier/context.yaml" ] ||
+      fail "${suite#"$REPO_ROOT/"} context is not $KYVERNO_SUITES/$tier/context.yaml: ${context#"$REPO_ROOT/"}"
+  done < <(find "$REPO_ROOT/$KYVERNO_SUITES" -name kyverno-test.yaml -print0)
   # "<suite>|<E2E params file>"
   for pair in "workload|$E2E_GOLDEN_PARAMS" "workload|$E2E_REGISTRY_PARAMS" "platform|$E2E_REGISTRY_PARAMS"; do
     IFS='|' read -r suite file <<<"$pair"

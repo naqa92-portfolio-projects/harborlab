@@ -1,0 +1,27 @@
+# Platform tier: Kyverno, Cilium and Argo CD images pass the vendor-signature policy (Audit); an Argo CD
+# release published before Argo CD signed its images fails it.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-vendor-signatures
+policies:
+  - ../../../../policies/platform/vendor-signatures.yaml
+resources:
+  - ../resources/pods.yaml
+variables: ../values.yaml
+context: ../context.yaml
+results:
+  - policy: platform-vendor-signatures
+    isImageValidatingPolicy: true
+    kind: Pod
+    resources:
+      - platform-test/vendor-kyverno
+      - platform-test/vendor-cilium
+      - platform-test/vendor-argocd
+    result: pass
+  - policy: platform-vendor-signatures
+    isImageValidatingPolicy: true
+    kind: Pod
+    resources:
+      - platform-test/vendor-unsigned
+    result: fail

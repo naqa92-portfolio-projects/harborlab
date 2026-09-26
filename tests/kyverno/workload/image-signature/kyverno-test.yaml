@@ -1,0 +1,32 @@
+# One policy per suite: the kyverno CLI deadlocks when two ImageValidatingPolicies evaluate one resource.
+# Unsigned, foreign-signer and no-SBOM images fail the signature/attestation policy; the others pass it.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-image-signature
+policies:
+  - ../../../../policies/workload/image-signature.yaml
+resources:
+  - ../resources/pods.yaml
+variables: ../values.yaml
+context: ../context.yaml
+results:
+  - policy: workload-image-signature
+    isImageValidatingPolicy: true
+    kind: Pod
+    resources:
+      - workload-test/unsigned
+      - workload-test/foreign-signer
+      - workload-test/no-sbom
+    result: fail
+  - policy: workload-image-signature
+    isImageValidatingPolicy: true
+    kind: Pod
+    resources:
+      - workload-test/compliant
+      - workload-test/non-harbor-registry
+      - workload-test/eol-base
+      - workload-test/unknown-base
+      - workload-test/missing-labels
+      - workload-test/deprecated-base
+    result: pass

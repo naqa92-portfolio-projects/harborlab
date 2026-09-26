@@ -1,0 +1,28 @@
+# Platform tier: an off-list registry (public.ecr.aws) fails the allow-list, allow-listed ones pass (Audit).
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-registry-allow-list
+policies:
+  - ../../../../policies/platform/registry-allow-list.yaml
+resources:
+  - ../resources/pods.yaml
+variables: ../values.yaml
+context: ../context.yaml
+results:
+  - policy: platform-registry-allow-list
+    isValidatingPolicy: true
+    kind: Pod
+    resources:
+      - platform-test/off-list-registry
+    result: fail
+  - policy: platform-registry-allow-list
+    isValidatingPolicy: true
+    kind: Pod
+    resources:
+      - platform-test/allow-listed-registry
+      - platform-test/vendor-kyverno
+      - platform-test/vendor-cilium
+      - platform-test/vendor-argocd
+      - platform-test/vendor-unsigned
+    result: pass

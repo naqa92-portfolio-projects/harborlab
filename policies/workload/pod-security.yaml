@@ -1,0 +1,27 @@
+# Workload tier: namespaces enforce Pod Security `restricted`; native Pod Security Admission denies pods.
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: workload-pod-security
+spec:
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+  matchConditions:
+    - name: workload-tier
+      expression: object.metadata.?labels[?"harborlab.io/tier"].orValue("") == "workload"
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{
+            metadata: Object.metadata{
+              labels: {
+                "pod-security.kubernetes.io/enforce": "restricted",
+                "pod-security.kubernetes.io/enforce-version": "latest"
+              }
+            }
+          }

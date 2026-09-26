@@ -1,0 +1,73 @@
+name: policies
+
+# Admission policies: kyverno test on the fixture images, then Chainsaw on an ephemeral kind cluster
+# running Kyverno with the production policies and the E2E params (the cluster has no Harbor).
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - prd-*
+    paths:
+      - policies/**
+      - tests/kyverno/**
+      - tests/chainsaw/**
+      - .github/workflows/policies.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: policies-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KYVERNO_CHART_VERSION: 3.9.1
+
+jobs:
+  kyverno-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - name: kyverno test
+        run: devbox run -- tests/kyverno/run.sh
+
+  chainsaw:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - name: Create the kind cluster
+        run: devbox run -- kind create cluster --name policies --wait 120s
+
+      - name: Install Kyverno
+        run: |
+          devbox run -- helm upgrade --install kyverno kyverno --repo https://kyverno.github.io/kyverno --version "$KYVERNO_CHART_VERSION" --namespace kyverno --create-namespace --wait --timeout 10m
+
+      - name: Apply the E2E params and the policies
+        run: |
+          devbox run -- kubectl apply -f tests/chainsaw/params
+          devbox run -- kubectl apply -f policies/workload -f policies/platform
+
+      - name: Wait for the policies to be ready
+        run: |
+          devbox run -- kubectl wait --for=jsonpath='{.status.conditionStatus.ready}'=true \
+            imagevalidatingpolicies,validatingpolicies,mutatingpolicies --all --timeout=180s
+
+      - name: Chainsaw
+        run: devbox run -- chainsaw test --test-dir tests/chainsaw --parallel 1

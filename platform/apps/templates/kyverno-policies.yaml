@@ -1,0 +1,22 @@
+# Admission policies and their params (golden catalog, registry allow-lists); retries until the
+# Kyverno CRDs exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.revision }}
+    path: policies
+    directory:
+      recurse: true
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true

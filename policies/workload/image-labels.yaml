@@ -1,0 +1,48 @@
+# Workload tier: every image config carries the required OCI and io.harborlab.* labels, non-empty.
+# Labels only: the build attestor is declared because the CRD requires one, never called.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: workload-image-labels
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 30
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        harborlab.io/tier: workload
+  matchImageReferences:
+    - glob: "*"
+  # Signatures are workload-image-signature's rule: this policy reports only its own.
+  validationConfigurations:
+    required: false
+  attestors:
+    - name: build
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: ^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/(main|prd-.+)$
+        ctlog:
+          url: https://rekor.sigstore.dev
+  variables:
+    - name: images
+      expression: >-
+        images.?containers.orValue([]) + images.?initContainers.orValue([]) + images.?ephemeralContainers.orValue([])
+    - name: required
+      expression: >-
+        ["org.opencontainers.image.source", "org.opencontainers.image.revision", "org.opencontainers.image.title",
+         "io.harborlab.golden.name", "io.harborlab.owner"]
+  validations:
+    - expression: >-
+        variables.images.all(ref,
+          variables.required.all(label,
+            image.GetMetadata(ref).config.?config.?Labels.orValue({})[?label].orValue("") != ""))
+      message: image is missing required labels

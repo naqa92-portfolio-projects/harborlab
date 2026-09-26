@@ -41,8 +41,9 @@ harbor_admin() {
       -w '%{http_code}' "https://$HARBOR_HOST/api/v2.0$path")"
 }
 
-# Runs the golden pull-replication policy now and waits for its execution to end; sets
-# REPLICATION_STATUS (status and Harbor's status text).
+# Runs the golden pull-replication policy now, waits for its execution to leave the in-progress
+# statuses and fails unless it succeeded; sets REPLICATION_STATUS (status and Harbor's status text).
+# The replication API reports success as `Succeed` (the job service enum says `Success`).
 replicate_golden() {
   local policy_id execution_id deadline
   harbor_admin GET "/replication/policies?name=$GOLDEN_REPLICATION"
@@ -55,18 +56,26 @@ replicate_golden() {
   execution_id="$(tr -d '\r' <"$HTTP_HEADERS" | awk 'tolower($1) == "location:" { print $2 }' | sed 's#.*/##')"
   [[ "$execution_id" =~ ^[0-9]+$ ]] || fail "no execution id in the Location header of the replication start"
 
+  local status
   deadline=$((SECONDS + REPLICATION_TIMEOUT_SECONDS))
   while :; do
     harbor_admin GET "/replication/executions/$execution_id"
     [ "$HTTP_CODE" = 200 ] || fail "cannot read replication execution $execution_id (HTTP $HTTP_CODE)"
-    REPLICATION_STATUS="$(jq -r '.status + " " + (.status_text // "")' "$HTTP_BODY")"
-    case "$REPLICATION_STATUS" in
-      Succeeded* | Failed* | Stopped*) return 0 ;;
+    status="$(jq -r '.status // ""' "$HTTP_BODY")"
+    REPLICATION_STATUS="$(jq -r '(.status // "") + " " + (.status_text // "")' "$HTTP_BODY")"
+    case "$status" in
+      "" | InProgress | Running | Pending | Scheduled) ;;
+      *) break ;;
     esac
     [ "$SECONDS" -lt "$deadline" ] ||
-      fail "replication execution $execution_id still $REPLICATION_STATUS after ${REPLICATION_TIMEOUT_SECONDS}s"
+      fail "replication execution $execution_id still '$REPLICATION_STATUS' after ${REPLICATION_TIMEOUT_SECONDS}s"
     sleep 10
   done
+
+  case "$status" in
+    Succeed | Success) ;;
+    *) fail "replication execution $execution_id of $GOLDEN_REPLICATION ended '$REPLICATION_STATUS': $(cat "$HTTP_BODY")" ;;
+  esac
 }
 
 @test "replicated golden images verify on their Harbor reference" {

@@ -54,7 +54,7 @@ decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret
 notes-m2: human decisions — dhi.io fallback proven via ESO pull secret; DHI_USERNAME added; Decision 8 → OpenTofu; robot check via GET /v2/. M2 coder commits 9cdcded 2bd927c 3f1882e 3fb4857 24f44d8 ec3cb3e f69272f (OpenTofu); gate notes: robot secret_wo_version manual bump on rotation, deprecated vault data source for dhi access_secret
 notes-m3: red 065c9756; CAT-003 amended — Harbor github-ghcr adapter cannot list GHCR (only specific repository names), replication filters become explicit {python,java} / {dt-bridge,hello-java}; accepted by orchestrator (adapter contract, not a workaround), golden filter to derive from images/catalog.yaml
-blocked: M3 — coder b9fdf90..fca7b5d, all targeted tests green except harbor_replicated "replicated golden images verify on their Harbor reference" (times out 900s: loop waits for Succeeded*/Failed*/Stopped*, Harbor replication API returns "Succeed"; manual verification OK). Decision 4 deviation: internal CA not baked into golden layer (local CA generated at runtime, DHI runtime has no shell) — proposal: runtime trust via cert-manager trust-manager Bundle (PEM + PKCS12)
+resolved-m3: human (2026-09-26) — harbor_replicated loop must treat Succeed/Success as success (Harbor replication API vocabulary); Decision 4 → internal CA via trust-manager at runtime
 pr: none
 findings:
 demo:
@@ -95,7 +95,7 @@ Kubescape (scan, CIS, runtime alerts, runtime OpenVEX) ──► dt-bridge ─�
 | 1 | Narrative | Image factory / governance platform; apps are only consumers |
 | 2 | Repo | Public monorepo `harborlab`, English; labels `io.harborlab.*` |
 | 3 | Build | GitHub Actions → GHCR, keyless cosign (GitHub OIDC), SBOM CycloneDX + SPDX, SLSA provenance; Harbor pull-replicates GHCR (DMZ → internal) |
-| 4 | Golden images | DHI upstream, DHI signature verified at ingestion, thin golden layer (governance labels, internal CA) re-signed; Python + Java (Temurin JRE); Renovate pins digests |
+| 4 | Golden images | DHI upstream, DHI signature verified at ingestion, thin golden layer (governance labels, non-root user) re-signed; internal CA delivered at runtime by cert-manager trust-manager (`Bundle` → PEM + PKCS#12 ConfigMap per namespace), not baked into images; Python + Java (Temurin JRE); Renovate pins digests |
 | 5 | Apps | `dt-bridge` (Python/FastAPI, uv) dogfooded through the golden path; `hello-java` (Spring Boot); non-compliant fixtures for demos |
 | 6 | Admission | Kyverno ≥ 1.19, CEL policy types only (ClusterPolicy deprecated, removed in 1.20); native PSA `restricted` |
 | 7 | Governance | `images/catalog.yaml` source of truth → Kyverno params + docs; SLSA provenance must prove a supported golden base (deprecated = warn, EOL/unknown = deny); Harbor immutable tags + retention |

@@ -250,7 +250,7 @@ configure_replication() {
       continue
     fi
     if ! jq -e --argjson live "$current" '
-        def view: {description, enabled, override, deletion, src: .src_registry.id, dest_namespace,
+        def view: {description, enabled, override, deletion: (.deletion // false), src: .src_registry.id, dest_namespace,
           dest_namespace_replace_count, trigger: {type: .trigger.type, cron: .trigger.trigger_settings.cron},
           filters: [.filters[]? | {type, value}]};
         view == ($live | view)' "$WORK/policy.json" >/dev/null; then
@@ -383,7 +383,7 @@ configure_retention() {
     get "/retentions/$retention_id" >"$WORK/retention-live.json"
     if ! jq -e --slurpfile live "$WORK/retention-live.json" '
         def view: {algorithm, trigger: {kind: .trigger.kind, cron: .trigger.settings.cron},
-          rules: [.rules[] | {disabled, action, template, params: (.params // {}),
+          rules: [.rules[] | {disabled: (.disabled // false), action, template, params: (.params // {}),
             tags: [.tag_selectors[] | {decoration, pattern}],
             repositories: [.scope_selectors.repository[] | {decoration, pattern}]}]};
         view == ($live[0] | view)' "$WORK/retention.json" >/dev/null; then
@@ -413,7 +413,7 @@ configure_webhooks() {
     fi
     if ! jq -e --argjson live "$current" '
         def view: {description, enabled, events: (.event_types | sort),
-          targets: [.targets[] | {type, address, skip_cert_verify, payload_format}]};
+          targets: [.targets[] | {type, address, skip_cert_verify: (.skip_cert_verify // false), payload_format}]};
         view == ($live | view)' "$WORK/webhook.json" >/dev/null; then
       jq --argjson id "$(jq .id <<<"$current")" '. + {id: $id}' "$WORK/webhook.json" >"$WORK/body.json"
       expect 200 PUT "/projects/$project/webhook/policies/$(jq -r .id <<<"$current")" "$WORK/body.json"

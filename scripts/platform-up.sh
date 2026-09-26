@@ -252,8 +252,9 @@ seed_credentials() {
     seed_once platform/harbor-internal
 
   if ! openbao_has platform/harbor-token-service; then
-    (umask 077 && openssl req -x509 -newkey rsa:4096 -nodes -days 3650 -subj "/CN=harbor-token-service" \
-      -keyout "$WORK/token.key" -out "$WORK/token.crt" 2>/dev/null)
+    # Harbor core only reads a PKCS#1 ("RSA PRIVATE KEY") token signing key.
+    (umask 077 && openssl genrsa -traditional -out "$WORK/token.key" 4096 2>/dev/null &&
+      openssl req -x509 -key "$WORK/token.key" -days 3650 -subj "/CN=harbor-token-service" -out "$WORK/token.crt")
     jq -n --rawfile crt "$WORK/token.crt" --rawfile key "$WORK/token.key" '{"tls.crt": $crt, "tls.key": $key}' |
       seed_once platform/harbor-token-service
     rm -f "$WORK/token.key" "$WORK/token.crt"

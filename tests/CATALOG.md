@@ -39,6 +39,41 @@ M0 spike interface assumed by `tests/spike/m0.bats` (CAT-000):
 - Tools on the devbox PATH: `bats`, `kind`, `kubectl`, `cosign` (with `--registry-cacert`),
   `crane`, `jq`, `curl`, `docker`.
 
+M1 interface assumed by `tests/platform/lifecycle.bats` (CAT-001, CAT-002),
+`tests/platform/secrets.bats` and `tests/ci/secrets.bats` (CAT-024):
+- Devbox provides `task` (go-task) and `gitleaks` on the `devbox run` PATH, in addition to the M0
+  tools. `Taskfile.yml` at the repository root defines `up` and `down`; the tests run them from
+  the repository root, which is what `devbox run -- task up|down` does.
+- `task up` creates or converges the kind cluster `harborlab` (distinct from `harborlab-spike`;
+  if both publish `127.0.0.1:443`, the spike must be down first — the tests do not manage it) and
+  exits 0 only after every `applications.argoproj.io` has been `Synced` and `Healthy` for 60
+  consecutive seconds. Every Application uses automated sync, so each has
+  `status.operationState` (`phase: Succeeded`, `finishedAt`) and `status.health.lastTransitionTime`
+  (health persisted in the Application CR, the ArgoCD default). The Applications `root`
+  (app-of-apps), `cert-manager`, `openbao`, `external-secrets` and `cloudnative-pg` exist; any other
+  Application is allowed and must converge too.
+- Isolated kubeconfig: `task up` writes `.kube/harborlab.yaml` (repo-relative, mode 600,
+  git-ignored, current context `kind-harborlab`) and leaves `$HOME/.kube/config` byte-for-byte
+  unchanged; `task down` deletes the cluster and that file, and leaves `$HOME/.kube/config`
+  unchanged. Neither task prints the `DHI_TOKEN` value.
+- OpenBao: pod `openbao-0`, container `openbao`, namespace `openbao`, initialized and unsealed;
+  its `bao` CLI reaches the server with the container's preset environment. KV v2 engine mounted
+  at `secret/`; platform credentials live under `secret/platform/<name>`. Kubernetes auth mounted
+  at `kubernetes/` with role `platform-audit` bound to ServiceAccount `openbao/platform-audit`,
+  policy limited to `read` on `secret/data/platform/*` and `read` on `sys/mounts`. The test logs in
+  with a short-lived token of that ServiceAccount (`kubectl create token`), passed on stdin.
+- External Secrets: ClusterSecretStore `openbao` is `Ready`, provider `vault` with `path: secret`,
+  `version: v2` and `auth.kubernetes`; every ExternalSecret in the cluster is `Ready`. Each
+  credential Secret is controller-owned by an ExternalSecret using `ClusterSecretStore/openbao` whose
+  `remoteRef.key` (or `dataFrom.extract.key`) is its `platform/<name>` path.
+- Credential table `PLATFORM_CREDENTIALS` in `tests/platform/secrets.bats`, one line
+  `<kv path>|<field>|<namespace>/<Secret>|<key>` per credential. Empty at M1 (the mechanism alone
+  is asserted: unseal, KV v2 mount, Kubernetes-auth login, store Ready); M2 adds Harbor admin,
+  robots and the Harbor DB, M3 the DHI pull token, M6 the DT API key and DB.
+- `tests/ci/secrets.bats` needs the full history (no shallow clone) and reads `DHI_TOKEN` from the
+  environment of `devbox run`; the value is a grep pattern read from stdin, never in argv or
+  output. A `.gitleaks.toml` at the repository root is used when present.
+
 Public-repo rules, binding for every test:
 - No secret, token, kubeconfig, private key or `.env` content is committed. `DHI_TOKEN` is read
   from the environment only; cluster credentials (Harbor, Grafana, DT API key) are read from their

@@ -54,6 +54,7 @@ decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret
 notes-m2: red 305d026; dhi.io fallback must be proven (criterion 4) via pod imagePullSecret delivered by ESO from OpenBao platform/dhi; DHI token enters OpenBao at M2 (dhi-proxy endpoint needs it)
 notes-m2b: DHI_USERNAME provided by the human (.env + GH secret), .env re-synced; M2 red d5be19e, coder next
+notes-m2c: red rework 0c14ff1 (tofu tests); coder to replace REST script with OpenTofu
 resolved-m2: human chose (2026-09-26) OpenTofu + goharbor provider (Decision 8 rewritten) and robot credential check via GET /v2/ (Harbor v2auth login target → 401 on bad creds); was: M2 — coder 9cdcded..3fb4857, 16/17 green. (a) coder objection: harbor_configure test "leaves Harbor state unchanged" asserts wrong robot secret → 401 but Harbor token service returns anonymous 200 when a scope is given (401 only without scope). (b) Decision 8 deviation: config via Harbor REST API (curl) instead of harbor-cli — harbor-cli 0.0.26 cannot read password from piped stdin (PR #944 closed unmerged), prints robot secrets, lacks retention schedule / immutable non-interactive / replication dest_namespace (#798 open); criterion 25 ADR title impacted
 pr: none
 findings:

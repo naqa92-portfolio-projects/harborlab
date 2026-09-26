@@ -41,11 +41,11 @@
 - At least 16 GiB RAM available to WSL — check: test "$(free -g | awk '/^Mem:/{print $2}')" -ge 16
 
 ## State
-phase: 1
+phase: 2
 milestone: 0/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
-catalog: none
+catalog: tests/CATALOG.md
 gate: none
 red_ahead: none
 pr: none

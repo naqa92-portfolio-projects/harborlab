@@ -50,6 +50,7 @@ gate: none
 red_ahead: none
 decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest, not tag; wait ≤240s (Harbor ManifestCache 10×20s); test image shares no layer with the node — human, 2026-09-26 (test amended aa48447, 3/3 pass on coder commits ca0d758..9927239)
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret
+notes-m2: red 305d026; dhi.io fallback must be proven (criterion 4) via pod imagePullSecret delivered by ESO from OpenBao platform/dhi; DHI token enters OpenBao at M2 (dhi-proxy endpoint needs it)
 pr: none
 findings:
 demo:

@@ -6,7 +6,7 @@
 
 1. On a clean machine with the prerequisites met, `devbox run -- task up` creates the kind cluster and exits 0 only after every ArgoCD Application has been Synced and Healthy for 60 consecutive seconds.
 2. `devbox run -- task down` deletes the cluster and the isolated kubeconfig, and a subsequent `task up` succeeds again.
-3. Running `devbox run -- task harbor:configure` twice in a row produces no change on the second run (projects, proxy caches, replication rules, robots, immutability, retention, webhooks and deployment security are reported as already in place).
+3. Running `devbox run -- task harbor:configure` twice in a row produces no change on the second run: the OpenTofu plan of the second run is empty for projects, proxy caches, replication rules, robots, immutability, retention, webhooks and deployment security, and the Harbor state is unchanged.
 4. Once Harbor is up, a pod pulling `docker.io`, `quay.io`, `ghcr.io`, `registry.k8s.io` or `dhi.io` images is served through the matching Harbor proxy-cache project (the artifact appears in that project); with Harbor scaled to 0, the same pull still succeeds through the upstream fallback.
 5. A push to `main` touching `images/golden/**` publishes `ghcr.io/<owner>/harborlab/golden/{python,java}` images whose DHI base signature was verified during the build, and that carry a cosign keyless signature, a CycloneDX SBOM attestation, an SPDX SBOM attestation and a SLSA provenance attestation, all verifiable with `cosign verify` / `cosign verify-attestation` against the identity of this repository's workflow.
 6. After replication, the same golden and app images in Harbor `golden`/`apps` still verify with cosign (signature and all attestations) against the Harbor reference.
@@ -28,7 +28,7 @@
 22. With every component running, cluster memory usage (`kubectl top nodes`) stays at or below 10 GiB.
 23. Each `task demo:<scenario>` (`unsigned`, `foreign-signer`, `non-golden-base`, `deprecated-base`, `eol-base`, `direct-dockerhub`, `root`, `runtime-shell`, `vex`) exits 0 when the platform reacts as documented in `docs/DEMO.md` and non-zero otherwise.
 24. OpenBao holds every platform credential (Harbor admin and robots, Dependency-Track API key, DHI pull token, database credentials); workloads receive them only through External Secrets, and no secret value is committed to Git.
-25. `README.md`, `docs/ARCHITECTURE.md`, `docs/THREAT-MODEL.md`, `docs/DEMO.md`, `docs/ROADMAP.md` and at least one ADR per structuring decision (Kyverno CEL-only, Kubescape over Trivy Operator + Falco, Dependency-Track + dt-bridge, harbor-cli over Terraform, transparent mirror + trust tiers, keyless signing) exist, in English.
+25. `README.md`, `docs/ARCHITECTURE.md`, `docs/THREAT-MODEL.md`, `docs/DEMO.md`, `docs/ROADMAP.md` and at least one ADR per structuring decision (Kyverno CEL-only, Kubescape over Trivy Operator + Falco, Dependency-Track + dt-bridge, OpenTofu + goharbor provider over harbor-cli, transparent mirror + trust tiers, keyless signing) exist, in English.
 
 ## Prerequisites
 
@@ -54,7 +54,7 @@ decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret
 notes-m2: red 305d026; dhi.io fallback must be proven (criterion 4) via pod imagePullSecret delivered by ESO from OpenBao platform/dhi; DHI token enters OpenBao at M2 (dhi-proxy endpoint needs it)
 notes-m2b: DHI_USERNAME provided by the human (.env + GH secret), .env re-synced; M2 red d5be19e, coder next
-blocked: M2 — coder 9cdcded..3fb4857, 16/17 green. (a) coder objection: harbor_configure test "leaves Harbor state unchanged" asserts wrong robot secret → 401 but Harbor token service returns anonymous 200 when a scope is given (401 only without scope). (b) Decision 8 deviation: config via Harbor REST API (curl) instead of harbor-cli — harbor-cli 0.0.26 cannot read password from piped stdin (PR #944 closed unmerged), prints robot secrets, lacks retention schedule / immutable non-interactive / replication dest_namespace (#798 open); criterion 25 ADR title impacted
+resolved-m2: human chose (2026-09-26) OpenTofu + goharbor provider (Decision 8 rewritten) and robot credential check via GET /v2/ (Harbor v2auth login target → 401 on bad creds); was: M2 — coder 9cdcded..3fb4857, 16/17 green. (a) coder objection: harbor_configure test "leaves Harbor state unchanged" asserts wrong robot secret → 401 but Harbor token service returns anonymous 200 when a scope is given (401 only without scope). (b) Decision 8 deviation: config via Harbor REST API (curl) instead of harbor-cli — harbor-cli 0.0.26 cannot read password from piped stdin (PR #944 closed unmerged), prints robot secrets, lacks retention schedule / immutable non-interactive / replication dest_namespace (#798 open); criterion 25 ADR title impacted
 pr: none
 findings:
 demo:
@@ -99,7 +99,7 @@ Kubescape (scan, CIS, runtime alerts, runtime OpenVEX) ──► dt-bridge ─�
 | 5 | Apps | `dt-bridge` (Python/FastAPI, uv) dogfooded through the golden path; `hello-java` (Spring Boot); non-compliant fixtures for demos |
 | 6 | Admission | Kyverno ≥ 1.19, CEL policy types only (ClusterPolicy deprecated, removed in 1.20); native PSA `restricted` |
 | 7 | Governance | `images/catalog.yaml` source of truth → Kyverno params + docs; SLSA provenance must prove a supported golden base (deprecated = warn, EOL/unknown = deny); Harbor immutable tags + retention |
-| 8 | Harbor config | Helm via ArgoCD; configuration through `harbor-cli` (devbox) in idempotent tasks — no Terraform |
+| 8 | Harbor config | Helm via ArgoCD; configuration declared with OpenTofu and the official `goharbor/harbor` provider (devbox), run by `task harbor:configure`; robot secrets generated in OpenBao and passed write-only (`secret_wo`, never in state); local state encrypted with the OpenBao Transit key provider. harbor-cli rejected (pre-1.0: no piped `--password-stdin`, prints robot secrets, no scheduled retention / non-interactive immutability / replication namespace flattening); Crossplane Harbor providers rejected (stale or single-maintainer) |
 | 9 | Trust model | Transparent containerd mirrors → Harbor proxy caches with upstream fallback (no SPOF, bootstrap-safe); tiers: workloads = full chain, platform = registry allow-list + vendor signatures when published, bootstrap = documented exception |
 | 10 | Cluster | kind single node, Cilium (kube-proxy replacement, Gateway API on host network), local CA trusted by containerd and used by cert-manager, `*.127.0.0.1.nip.io` |
 | 11 | Secrets | OpenBao (Kubernetes auth, least-privilege policies) + External Secrets; seeded from git-ignored `.env` |
@@ -117,7 +117,7 @@ Kubescape (scan, CIS, runtime alerts, runtime OpenVEX) ──► dt-bridge ─�
 | Signatures/attestations (cosign classic vs Sigstore bundle / OCI referrers) not preserved by GHCR → Harbor replication, or not readable by Kyverno | M0 spike before any other work; ADR records the chosen format |
 | Kyverno CEL cannot read image config labels | Validate in M4; fallback: CI check + attested label set |
 | Kubescape VEX generation is experimental (~2 min observation, `docker.io` vs `index.docker.io` naming) | Normalise references in `dt-bridge`; document limits |
-| `harbor-cli` is pre-1.0 and imperative | Idempotency (list → create/update) handled in tasks; covered by criterion 3 |
+| Provider credentials without a write-only variant (registry `access_secret`) land in OpenTofu state | State encrypted with the OpenBao Transit key provider, state file git-ignored; covered by criterion 24 |
 | Grype (in-cluster) and Trivy (CI/Harbor) CVE results diverge | Documented in an ADR; DT is the triage source of truth |
 | Keyless signing uses the public Rekor log, unlike a bank KMS/HSM setup | Documented in the threat model with the KMS alternative |
 | Memory pressure on a 23 GiB WSL host | Budget checked in M8 (criterion 22) |

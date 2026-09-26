@@ -20,6 +20,25 @@ Assumptions (update the File column if the implementation lands elsewhere): apps
 `apps/dt-bridge` and `apps/hello-java`; the Harbor host is `harbor.127.0.0.1.nip.io`; lint checks
 are exposed as tasks that accept a target path so a test can point them at a temp directory.
 
+M0 spike interface assumed by `tests/spike/m0.bats` (CAT-000):
+- `spike/up.sh` (executable, idempotent, prints no secret) creates or converges the kind cluster
+  `harborlab-spike`; the test calls it once per run and reads the kubeconfig with
+  `kind get kubeconfig`, never from the repository.
+- Harbor at `https://harbor.127.0.0.1.nip.io`, reachable from the host; its CA PEM in Secret
+  `harbor/harbor-ca` key `ca.crt`; admin password in Secret `harbor/harbor-core` key
+  `HARBOR_ADMIN_PASSWORD` (user `admin`); Harbor workloads are the Deployments and StatefulSets of
+  namespace `harbor`.
+- `.github/workflows/spike.yml` publishes the public image
+  `ghcr.io/naqa92-portfolio-projects/harborlab/spike/hello:m0`, keyless-signed and attested
+  (`cyclonedx`, `spdxjson`, `slsaprovenance1`); Harbor public project `spike` holds it as
+  `spike/hello:m0` (replicated, same digest) and an unsigned image `spike/unsigned:m0`.
+- Kyverno ImageValidatingPolicy `spike-verify-harbor` enforces the spike identity on
+  `harbor.127.0.0.1.nip.io/spike/*` in namespaces labelled `harborlab.io/tier=workload` only.
+- The kind node's containerd mirrors `docker.io` to the public Harbor proxy-cache project
+  `dockerhub-proxy`, with `registry-1.docker.io` as fallback.
+- Tools on the devbox PATH: `bats`, `kind`, `kubectl`, `cosign` (with `--registry-cacert`),
+  `crane`, `jq`, `curl`, `docker`.
+
 Public-repo rules, binding for every test:
 - No secret, token, kubeconfig, private key or `.env` content is committed. `DHI_TOKEN` is read
   from the environment only; cluster credentials (Harbor, Grafana, DT API key) are read from their

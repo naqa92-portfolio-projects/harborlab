@@ -236,7 +236,7 @@ seed_once() {
 }
 
 openbao_has() {
-  bao_root 'bao kv get -mount=secret "$1" >/dev/null 2>&1' "$1" </dev/null
+  bao_root 'bao kv get -mount=secret "$1" >/dev/null 2>&1' "$1" </dev/null 2>/dev/null
 }
 
 # Generated values reach jq and OpenBao through pipes only, never through argv.

@@ -48,7 +48,7 @@ branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
 gate: none
 red_ahead: none
-blocked: M0 coder objection — CAT-000 test 3 waits 60s for tag dockerhub-proxy/library/busybox:1.36.1; Harbor tags multi-arch proxied manifests only after ~5 min (coder commit 9927239, tests 1-2 green)
+decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest, not tag; wait ≤240s (Harbor ManifestCache 10×20s); test image shares no layer with the node — human, 2026-09-26
 pr: none
 findings:
 demo:

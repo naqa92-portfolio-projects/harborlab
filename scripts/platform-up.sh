@@ -17,6 +17,11 @@ GATEWAY_API_VERSION=v1.6.1
 CILIUM_CHART_VERSION=1.20.2
 ARGOCD_CHART_VERSION=10.9.2
 
+# Applications running images of Harbor `apps`: they converge only once Harbor has replicated them.
+WORKLOAD_APPLICATIONS='["dt-bridge", "hello-java"]'
+GOVERNED_REPLICATIONS=(golden-from-ghcr apps-from-ghcr)
+REPLICATION_TIMEOUT_SECONDS=900
+
 STABLE_SECONDS=60
 # Margin over STABLE_SECONDS so the stability check still holds when a caller re-reads it after exit.
 STABLE_MARGIN_SECONDS=5
@@ -281,16 +286,19 @@ seed_credentials() {
   fi
 }
 
-# Exits once every Application has been Synced and Healthy, with a succeeded last sync, for
-# STABLE_SECONDS; the timestamps are the ones Argo CD persists in each Application.
+# Exits once every Application, except those named in the JSON array $1, has been Synced and Healthy,
+# with a succeeded last sync, for STABLE_SECONDS; the timestamps are the ones Argo CD persists.
 wait_for_convergence() {
-  log "waiting for every Argo CD Application to be Synced and Healthy for ${STABLE_SECONDS}s"
+  local excluded="${1:-[]}"
+  log "waiting for the Argo CD Applications (excluded: $excluded) to be Synced and Healthy for ${STABLE_SECONDS}s"
   local deadline=$((SECONDS + CONVERGE_TIMEOUT_SECONDS)) next_report=$((SECONDS + 60)) pending
   while :; do
     if kubectl get applications.argoproj.io -A -o json >"$WORK/applications.json" 2>/dev/null; then
-      pending="$(jq -r --argjson now "$(date -u +%s)" --argjson age "$((STABLE_SECONDS + STABLE_MARGIN_SECONDS))" '
+      pending="$(jq -r --argjson now "$(date -u +%s)" --argjson age "$((STABLE_SECONDS + STABLE_MARGIN_SECONDS))" \
+        --argjson excluded "$excluded" '
         if (.items | length) == 0 then "no Application yet" else
         .items[]
+        | select(.metadata.name as $name | $excluded | index($name) | not)
         | (.status.health.lastTransitionTime // "") as $healthy_since
         | (.status.operationState.finishedAt // "") as $synced_at
         | select(.status.sync.status != "Synced" or .status.health.status != "Healthy"
@@ -301,7 +309,7 @@ wait_for_convergence() {
         | "\(.metadata.name): sync=\(.status.sync.status) health=\(.status.health.status) operation=\(.status.operationState.phase // "none")"
         end' "$WORK/applications.json")"
       if [ -z "$pending" ]; then
-        log "every Argo CD Application is Synced and Healthy"
+        log "the Argo CD Applications are Synced and Healthy"
         return
       fi
     else
@@ -318,6 +326,37 @@ wait_for_convergence() {
   done
 }
 
+# Runs the governed pull replications now rather than at their schedule and waits for each to
+# succeed. The admin credential goes to curl through a 0600 header file, never argv.
+replicate_governed_projects() {
+  local auth="$WORK/harbor-auth" api="https://$HARBOR_HOST/api/v2.0" replication id execution status deadline
+  (umask 077 && kubectl -n harbor get secret harbor-admin -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' | base64 -d |
+    { printf 'admin:'; cat; } | base64 -w0 | { printf 'Authorization: Basic '; cat; echo; } >"$auth")
+  for replication in "${GOVERNED_REPLICATIONS[@]}"; do
+    id="$(curl -sS --fail --cacert "$CA_DIR/ca.crt" -H @"$auth" "$api/replication/policies?name=$replication" |
+      jq -r --arg n "$replication" '.[] | select(.name == $n) | .id')"
+    [ -n "$id" ] || die "Harbor replication policy $replication not found"
+    log "running Harbor replication $replication"
+    execution="$(curl -sS --fail --cacert "$CA_DIR/ca.crt" -H @"$auth" -H 'Content-Type: application/json' \
+      --data "{\"policy_id\": $id}" -D - -o /dev/null "$api/replication/executions" |
+      tr -d '\r' | awk 'tolower($1) == "location:" { print $2 }' | sed 's#.*/##')"
+    [[ "$execution" =~ ^[0-9]+$ ]] || die "Harbor did not start replication $replication"
+    deadline=$((SECONDS + REPLICATION_TIMEOUT_SECONDS))
+    while :; do
+      status="$(curl -sS --fail --cacert "$CA_DIR/ca.crt" -H @"$auth" "$api/replication/executions/$execution" |
+        jq -r '.status // ""')"
+      case "$status" in
+        Succeed | Success) break ;;
+        "" | InProgress | Running | Pending | Scheduled) ;;
+        *) die "Harbor replication $replication ended $status" ;;
+      esac
+      [ "$SECONDS" -lt "$deadline" ] || die "Harbor replication $replication still $status after ${REPLICATION_TIMEOUT_SECONDS}s"
+      sleep 10
+    done
+  done
+  rm -f "$auth"
+}
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 chmod 700 "$WORK"
@@ -330,6 +369,8 @@ ensure_argocd
 ensure_root_application
 ensure_openbao
 seed_credentials
-wait_for_convergence
+wait_for_convergence "$WORKLOAD_APPLICATIONS"
 "$REPO_ROOT/scripts/harbor-tofu.sh" configure
+replicate_governed_projects
+wait_for_convergence
 log "platform ready (kubeconfig: $PLATFORM_KUBECONFIG)"

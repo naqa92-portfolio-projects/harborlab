@@ -1,4 +1,5 @@
-# Publishes the public certificate of the local CA to workload namespaces as PEM and PKCS#12.
+# Publishes the public certificate of the local CA to workload namespaces as PEM and PKCS#12, and to
+# Kyverno as PEM.
 # Only key tls.crt is sourced: harborlab-ca also holds the CA private key.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -55,6 +56,24 @@ spec:
                 namespaceSelector:
                   matchLabels:
                     harborlab.io/tier: workload
+          # Kyverno verifies workload images on their Harbor reference, served with a local CA certificate.
+          - apiVersion: trust.cert-manager.io/v1alpha1
+            kind: Bundle
+            metadata:
+              name: kyverno-harborlab-ca
+              annotations:
+                argocd.argoproj.io/sync-wave: "1"
+            spec:
+              sources:
+                - secret:
+                    name: harborlab-ca
+                    key: tls.crt
+              target:
+                configMap:
+                  key: harborlab-ca.crt
+                namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kyverno
   ignoreDifferences:
     {{- toYaml .Values.webhookCaBundleDifferences | nindent 4 }}
   syncPolicy:

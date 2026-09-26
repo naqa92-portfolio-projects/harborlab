@@ -22,6 +22,33 @@ spec:
           preserve: false
         webhookLabels:
           app.kubernetes.io/managed-by: argocd
+        # Image verification on Harbor trusts the local CA from the trust-manager Bundle
+        # kyverno-harborlab-ca next to the system roots: the chart's caCertificates would replace them.
+        admissionController:
+          container:
+            extraEnvVars:
+              - name: SSL_CERT_DIR
+                value: /etc/ssl/certs:/etc/harborlab-ca
+          extraVolumes:
+            - name: harborlab-ca
+              configMap:
+                name: kyverno-harborlab-ca
+          extraVolumeMounts:
+            - name: harborlab-ca
+              mountPath: /etc/harborlab-ca
+              readOnly: true
+        reportsController:
+          extraEnvVars:
+            - name: SSL_CERT_DIR
+              value: /etc/ssl/certs:/etc/harborlab-ca
+          extraVolumes:
+            - name: harborlab-ca
+              configMap:
+                name: kyverno-harborlab-ca
+          extraVolumeMounts:
+            - name: harborlab-ca
+              mountPath: /etc/harborlab-ca
+              readOnly: true
   ignoreDifferences:
     {{- toYaml .Values.webhookCaBundleDifferences | nindent 4 }}
     # Aggregated ClusterRoles are filled in by the controller manager.

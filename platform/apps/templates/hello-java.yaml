@@ -1,0 +1,16 @@
+# Golden-path application in its workload namespace; the image is its Harbor `apps` digest.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hello-java
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.revision }}
+    path: platform/workloads/hello-java
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}

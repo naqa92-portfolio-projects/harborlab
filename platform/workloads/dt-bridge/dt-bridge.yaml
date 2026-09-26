@@ -1,0 +1,95 @@
+# dt-bridge in a workload namespace: Kyverno admits its Harbor image and labels the namespace Pod
+# Security restricted; trust-manager writes the local CA (ConfigMap harborlab-trust) into it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dt-bridge
+  labels:
+    harborlab.io/tier: workload
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dt-bridge
+  namespace: dt-bridge
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dt-bridge
+  namespace: dt-bridge
+  labels:
+    app.kubernetes.io/name: dt-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dt-bridge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dt-bridge
+    spec:
+      serviceAccountName: dt-bridge
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dt-bridge
+          image: harbor.127.0.0.1.nip.io/apps/dt-bridge@sha256:016e34aa06f7607f249e062a49561dc498935fdbc555e5c31ad936d5965704fc
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Python's default TLS context reads only this file: the golden image bakes no local CA.
+            - name: SSL_CERT_FILE
+              value: /etc/harborlab-trust/ca.crt
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: harborlab-trust
+              mountPath: /etc/harborlab-trust
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: harborlab-trust
+          configMap:
+            name: harborlab-trust
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dt-bridge
+  namespace: dt-bridge
+spec:
+  selector:
+    app.kubernetes.io/name: dt-bridge
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

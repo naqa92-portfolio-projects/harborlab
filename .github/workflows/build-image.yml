@@ -1,0 +1,198 @@
+name: build-image
+
+# Platform-owned image build: a caller only names the image and its build context. The Dockerfile's
+# first FROM must be digest-pinned; a dhi.io base has its DHI signature verified before the build.
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Repository under ghcr.io/<owner>/<repo>/, e.g. golden/python
+        type: string
+        required: true
+      context:
+        description: Build context directory holding the Dockerfile
+        type: string
+        required: true
+    secrets:
+      DHI_USERNAME:
+        description: Docker account owning DHI_TOKEN, needed when the base image comes from dhi.io
+        required: false
+      DHI_TOKEN:
+        description: Docker access token for dhi.io
+        required: false
+    outputs:
+      digest:
+        description: Manifest digest of the published image
+        value: ${{ jobs.build.outputs.digest }}
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build, sign and attest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/${{ inputs.image }}
+      TAG: sha-${{ github.sha }}
+      CONTEXT: ${{ inputs.context }}
+      DHI_PUBLIC_KEY: https://dhi.io/keyring/latest.pub
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - name: Read the pinned base image
+        id: base
+        run: |
+          from="$(awk 'toupper($1) == "FROM" { for (i = 2; i <= NF; i++) if ($i !~ /^--/) { print $i; exit } }' "$CONTEXT/Dockerfile")"
+          if [[ ! "$from" =~ ^([^@]+)@(sha256:[0-9a-f]{64})$ ]]; then
+            echo "::error file=$CONTEXT/Dockerfile::the first FROM is not pinned by digest: $from"
+            exit 1
+          fi
+          name="${BASH_REMATCH[1]}"
+          repo="$name"
+          if [[ "${name##*/}" == *:* ]]; then repo="${name%:*}"; fi
+          {
+            echo "name=$name"
+            echo "repo=$repo"
+            echo "digest=${BASH_REMATCH[2]}"
+            if [[ "$name" == dhi.io/* ]]; then echo "dhi=true"; else echo "dhi=false"; fi
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - if: steps.base.outputs.dhi == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_TOKEN }}
+
+      - name: Verify DHI base signature
+        if: steps.base.outputs.dhi == 'true'
+        env:
+          BASE: ${{ steps.base.outputs.repo }}@${{ steps.base.outputs.digest }}
+        run: devbox run -q -- cosign verify --key "$DHI_PUBLIC_KEY" --experimental-oci11 "$BASE" >/dev/null
+
+      # Published tags are never overwritten: Harbor keeps them immutable once replicated.
+      - name: Look up an image already published for this commit
+        id: existing
+        run: |
+          if out="$(devbox run -q -- crane digest "$IMAGE:$TAG" 2>&1)"; then
+            [[ "$out" =~ (sha256:[0-9a-f]{64}) ]] || { echo "::error::unexpected crane output: $out"; exit 1; }
+            echo "digest=${BASH_REMATCH[1]}" >>"$GITHUB_OUTPUT"
+            echo "$IMAGE:$TAG already exists, not pushed again"
+          elif [[ "$out" == *MANIFEST_UNKNOWN* || "$out" == *NAME_UNKNOWN* || "$out" == *"404"* ]]; then
+            echo "$IMAGE:$TAG is not published yet"
+          else
+            echo "::error::cannot look up $IMAGE:$TAG: $out"
+            exit 1
+          fi
+
+      - if: steps.existing.outputs.digest == ''
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - id: build
+        if: steps.existing.outputs.digest == ''
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.context }}
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.base.name=${{ steps.base.outputs.name }}
+            org.opencontainers.image.base.digest=${{ steps.base.outputs.digest }}
+
+      - name: Resolve the image digest
+        id: digest
+        env:
+          EXISTING: ${{ steps.existing.outputs.digest }}
+          BUILT: ${{ steps.build.outputs.digest }}
+        run: |
+          digest="${EXISTING:-$BUILT}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no image digest"; exit 1; }
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+
+      - name: Trivy scan (VEX from OCI)
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          devbox run -q -- trivy image --vex oci --show-suppressed --ignore-unfixed \
+            --severity CRITICAL --exit-code 1 "$IMAGE@$DIGEST"
+
+      - name: Generate CycloneDX and SPDX SBOMs
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          devbox run -q -- syft scan "registry:$IMAGE@$DIGEST" \
+            -o cyclonedx-json=sbom.cdx.json -o spdx-json=sbom.spdx.json
+
+      - name: Write SLSA v1 provenance predicate
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          BUILDER_ID: ${{ github.server_url }}/${{ github.workflow_ref }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_NAME: ${{ steps.base.outputs.name }}
+          BASE_DIGEST: ${{ steps.base.outputs.digest }}
+        run: |
+          jq -n \
+            --arg builder "$BUILDER_ID" --arg run "$RUN_URL" --arg repo "$REPO_URL" \
+            --arg ref "$GITHUB_REF" --arg sha "$GITHUB_SHA" --arg event "$EVENT_NAME" \
+            --arg context "$CONTEXT" --arg base "$BASE_NAME" --arg base_digest "${BASE_DIGEST#sha256:}" \
+            '{
+              buildDefinition: {
+                buildType: "https://actions.github.io/buildtypes/workflow/v1",
+                externalParameters: {
+                  workflow: {ref: $ref, repository: $repo, path: ".github/workflows/build-image.yml"},
+                  context: $context
+                },
+                internalParameters: {github: {event_name: $event}},
+                resolvedDependencies: [
+                  {uri: ("git+" + $repo + "@" + $ref), digest: {gitCommit: $sha}},
+                  {uri: ("oci://" + $base), digest: {sha256: $base_digest}}
+                ]
+              },
+              runDetails: {builder: {id: $builder}, metadata: {invocationId: $run}}
+            }' >provenance.json
+
+      - name: Sign and attest
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          ref="$IMAGE@$DIGEST"
+          devbox run -q -- cosign sign --yes "$ref"
+          devbox run -q -- cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$ref"
+          devbox run -q -- cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$ref"
+          devbox run -q -- cosign attest --yes --type slsaprovenance1 --predicate provenance.json "$ref"
+
+      - name: Verify on GHCR
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          ref="$IMAGE@$DIGEST"
+          identity="^https://github\.com/${GITHUB_REPOSITORY}/\.github/workflows/build-image\.yml@${GITHUB_REF}\$"
+          args=(--certificate-oidc-issuer https://token.actions.githubusercontent.com
+            --certificate-identity-regexp "$identity" --certificate-github-workflow-sha "$GITHUB_SHA")
+          devbox run -q -- cosign verify "${args[@]}" "$ref" >/dev/null
+          for type in cyclonedx spdxjson slsaprovenance1; do
+            devbox run -q -- cosign verify-attestation "${args[@]}" --type "$type" "$ref" >/dev/null
+          done
+          echo "verified $ref"

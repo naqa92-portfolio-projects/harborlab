@@ -1,0 +1,47 @@
+name: golden
+
+# Golden images are published from main; PRD branches (prd-*) publish too, signed with their own
+# branch identity, so the images exist before the merge.
+on:
+  push:
+    branches:
+      - main
+      - prd-*
+    paths:
+      - images/golden/**
+      - .github/workflows/golden.yml
+      - .github/workflows/build-image.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: golden-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  python:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: golden/python
+      context: images/golden/python
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+
+  java:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: golden/java
+      context: images/golden/java
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}

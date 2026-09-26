@@ -12,10 +12,16 @@
     "openssl@latest",
     "go-task@3.53.1",
     "gitleaks@8.30.1",
-    "opentofu@1.12.5"
+    "opentofu@1.12.5",
+    "yq-go@4.53.3",
+    "zizmor@1.29.0",
+    "hadolint@2.14.0",
+    "trivy@0.74.0",
+    "kube-linter@0.8.3",
+    "syft@1.51.0"
   ],
   "shell": {
     "init_hook": [],
-    "scripts": {}
+    "scripts":   {}
   }
 }

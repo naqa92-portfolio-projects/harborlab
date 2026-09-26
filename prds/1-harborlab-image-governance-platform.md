@@ -54,7 +54,7 @@ decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret
 notes-m2: human decisions — dhi.io fallback proven via ESO pull secret; DHI_USERNAME added; Decision 8 → OpenTofu; robot check via GET /v2/. M2 coder commits 9cdcded 2bd927c 3f1882e 3fb4857 24f44d8 ec3cb3e f69272f (OpenTofu); gate notes: robot secret_wo_version manual bump on rotation, deprecated vault data source for dhi access_secret
 notes-m3: red 065c9756; CAT-003 amended — Harbor github-ghcr adapter cannot list GHCR (only specific repository names), replication filters become explicit {python,java} / {dt-bridge,hello-java}; accepted by orchestrator (adapter contract, not a workaround), golden filter to derive from images/catalog.yaml
-resolved-m3: human (2026-09-26) — harbor_replicated loop must treat Succeed/Success as success (Harbor replication API vocabulary); Decision 4 → internal CA via trust-manager at runtime
+resolved-m3: human (2026-09-26) — harbor_replicated loop must treat Succeed/Success as success (Harbor replication API vocabulary); Decision 4 → internal CA via trust-manager at runtime; red rework 45e429d (trust_bundle, golden_dockerfiles, replication loop fixed); coder next: trust-manager
 pr: none
 findings:
 demo:

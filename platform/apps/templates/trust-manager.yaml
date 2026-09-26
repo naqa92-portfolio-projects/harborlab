@@ -49,6 +49,8 @@ spec:
                 additionalFormats:
                   pkcs12:
                     key: truststore.p12
+                    # The CRD default, written out so Argo CD does not diff against it.
+                    password: ""
                     profile: Modern2023
                 namespaceSelector:
                   matchLabels:

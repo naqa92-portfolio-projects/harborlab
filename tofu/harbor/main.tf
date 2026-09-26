@@ -160,5 +160,4 @@ resource "harbor_project_webhook" "dt_bridge" {
   notify_type      = "http"
   events_types     = ["PUSH_ARTIFACT", "REPLICATION"]
   skip_cert_verify = false
-  payload_format   = "Default"
 }

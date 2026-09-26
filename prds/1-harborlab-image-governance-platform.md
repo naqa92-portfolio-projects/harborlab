@@ -38,6 +38,8 @@
 - Repository is public (keyless signing identity, public GHCR images, Scorecard) — check: test "$(gh repo view naqa92-portfolio-projects/harborlab --json visibility -q .visibility)" = PUBLIC
 - Docker account token for dhi.io in local `.env` — check: grep -q '^DHI_TOKEN=.' .env
 - Docker account token for dhi.io in GitHub Actions secrets — check: gh secret list --repo naqa92-portfolio-projects/harborlab | grep -q '^DHI_TOKEN'
+- Docker account name owning the dhi.io token in local `.env` — check: grep -q '^DHI_USERNAME=.' .env
+- Docker account name owning the dhi.io token in GitHub Actions secrets — check: gh secret list --repo naqa92-portfolio-projects/harborlab | grep -q '^DHI_USERNAME'
 - At least 16 GiB RAM available to WSL — check: test "$(free -g | awk '/^Mem:/{print $2}')" -ge 16
 
 ## State
@@ -51,6 +53,7 @@ red_ahead: none
 decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest, not tag; wait ≤240s (Harbor ManifestCache 10×20s); test image shares no layer with the node — human, 2026-09-26 (test amended aa48447, 3/3 pass on coder commits ca0d758..9927239)
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret
 notes-m2: red 305d026; dhi.io fallback must be proven (criterion 4) via pod imagePullSecret delivered by ESO from OpenBao platform/dhi; DHI token enters OpenBao at M2 (dhi-proxy endpoint needs it)
+blocked: M2 — dhi.io login needs the Docker account name (DHI_USERNAME) in .env and GH secrets; on resume copy /home/naqa/harborlab/.env into the worktree (0600) then re-run prerequisite checks; M2 red d5be19e done, coder next
 pr: none
 findings:
 demo:

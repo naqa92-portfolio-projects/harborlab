@@ -48,7 +48,7 @@ branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
 gate: none
 red_ahead: none
-decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest, not tag; wait ≤240s (Harbor ManifestCache 10×20s); test image shares no layer with the node — human, 2026-09-26
+decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest, not tag; wait ≤240s (Harbor ManifestCache 10×20s); test image shares no layer with the node — human, 2026-09-26 (test amended aa48447, 3/3 pass on coder commits ca0d758..9927239)
 pr: none
 findings:
 demo:

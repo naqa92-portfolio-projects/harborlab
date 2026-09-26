@@ -1,3 +1,4 @@
+# API-server defaults are written out so that Argo CD sees no drift.
 # Single HTTPS entry point on the node's host network (port 443), published on 127.0.0.1:443 by kind.
 apiVersion: v1
 kind: Namespace
@@ -36,7 +37,8 @@ spec:
       tls:
         mode: Terminate
         certificateRefs:
-          - kind: Secret
+          - group: ""
+            kind: Secret
             name: wildcard-nip-io-tls
       allowedRoutes:
         namespaces:

@@ -1,0 +1,15 @@
+# Namespaces the ephemeral cluster lacks (Cilium and Argo CD are not installed there), labelled platform
+# like the existing kube-system and kyverno: the exclusion must hold by name, not by a missing label.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cilium
+  labels:
+    harborlab.io/tier: platform
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    harborlab.io/tier: platform

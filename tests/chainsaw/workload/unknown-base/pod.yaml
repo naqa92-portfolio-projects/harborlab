@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unknown-base
+spec:
+  # Admission is under test: no node matches, so the image is never pulled.
+  nodeSelector:
+    harborlab.io/e2e: unschedulable
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/unknown-base:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]

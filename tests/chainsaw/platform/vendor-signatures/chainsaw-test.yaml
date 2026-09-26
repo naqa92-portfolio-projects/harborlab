@@ -1,0 +1,59 @@
+# In a platform namespace, the Kyverno, Cilium and Argo CD images are verified against their vendor's
+# signature (pass); an Argo CD release published before Argo CD signed its images is reported (fail).
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-vendor-signatures
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: platform
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: the vendor pods are admitted (the platform tier only reports)
+      try:
+        - apply:
+            file: pods.yaml
+    - name: the PolicyReports hold the vendor signature results
+      try:
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: vendor-kyverno
+              (length(results[?policy == 'platform-vendor-signatures' && result == 'pass']) > `0`): true
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: vendor-cilium
+              (length(results[?policy == 'platform-vendor-signatures' && result == 'pass']) > `0`): true
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: vendor-argocd
+              (length(results[?policy == 'platform-vendor-signatures' && result == 'pass']) > `0`): true
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: vendor-unsigned
+              (length(results[?policy == 'platform-vendor-signatures' && result == 'fail']) > `0`): true

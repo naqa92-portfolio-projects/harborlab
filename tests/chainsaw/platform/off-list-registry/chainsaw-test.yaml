@@ -1,0 +1,41 @@
+# In a platform namespace, a pod from a registry outside the allow-list is admitted and reported as a
+# failure of platform-registry-allow-list; an allow-listed one is reported as a pass.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-off-list-registry
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: platform
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: both pods are admitted (the platform tier only reports)
+      try:
+        - apply:
+            file: pods.yaml
+    - name: the PolicyReports hold the allow-list results
+      try:
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: off-list-registry
+              (length(results[?policy == 'platform-registry-allow-list' && result == 'fail']) > `0`): true
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: allow-listed-registry
+              (length(results[?policy == 'platform-registry-allow-list' && result == 'pass']) > `0`): true

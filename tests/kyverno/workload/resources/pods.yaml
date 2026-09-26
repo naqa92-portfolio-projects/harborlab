@@ -1,0 +1,163 @@
+# One pod per admission case in a workload namespace. Fixture tags are pinned to their digest and the
+# image metadata is fetched from the registry by tests/kyverno/run.sh before `kyverno test` runs.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: compliant
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/compliant:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unsigned
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/unsigned:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: foreign-signer
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/foreign-signer:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: non-harbor-registry
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/offlist/compliant:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: eol-base
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/eol-base:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unknown-base
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/unknown-base:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-sbom
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/no-sbom:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: missing-labels
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/missing-labels:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: deprecated-base
+  namespace: workload-test
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/deprecated-base:e2e
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]

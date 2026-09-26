@@ -1,0 +1,12 @@
+# E2E golden catalog params: the generated policies/params/golden-images.yaml entries, unchanged, plus
+# fixture-only entries (DHI digests standing in for retired golden bases), absent from images/catalog.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: golden-images
+  namespace: kyverno
+data:
+  sha256.44440011a75ee28d9bbf977929288e1d9f907a2bc17ab2a1c67cd0e1fc7ad696: supported
+  sha256.d90b2f34d8725f8fcfbd4e9e1c9ba0b85bfe1c26497e2c9cb7bc45aacfc6318b: supported
+  sha256.1bab11a972258285639bebc02b334326c7bdfc1740fb438540728a4f3f896235: deprecated
+  sha256.9a9fd7ffe996f9042cca4a2c0d167076a55b650cbd45a8bc535d9ab7d8ca2217: eol

@@ -1,0 +1,60 @@
+# Platform tier (harborlab.io/tier=platform): registry allow-list and vendor signatures, reported only.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: off-list-registry
+  namespace: platform-test
+spec:
+  containers:
+    - name: main
+      image: public.ecr.aws/docker/library/busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: allow-listed-registry
+  namespace: platform-test
+spec:
+  containers:
+    - name: main
+      image: registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vendor-kyverno
+  namespace: platform-test
+spec:
+  containers:
+    - name: main
+      image: reg.kyverno.io/kyverno/kyverno:v1.19.1@sha256:b31d8511ae5fd6010e2a01ea72ebae08eb82fa51d91af14a1d9fe989949b4edb
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vendor-cilium
+  namespace: platform-test
+spec:
+  containers:
+    - name: main
+      image: quay.io/cilium/cilium:v1.20.2@sha256:2939231d0d3e3ebddcd80fffa168b7ddcc78fdf0dc864d1c8c126ff523c54f01
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vendor-argocd
+  namespace: platform-test
+spec:
+  containers:
+    - name: main
+      image: quay.io/argoproj/argocd:v3.5.3@sha256:dd3f47d5a5e4da563a7a398506e892481b358a7cec50abdf320c71aa55904bfa
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vendor-unsigned
+  namespace: platform-test
+spec:
+  containers:
+    - name: main
+      image: quay.io/argoproj/argocd:v2.4.0@sha256:390f86e5f9dd9bb82a11d75ce6e1f7591d521a5690bf1c55ac266e2456a2aac6

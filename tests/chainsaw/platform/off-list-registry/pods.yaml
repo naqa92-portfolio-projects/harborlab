@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: off-list-registry
+spec:
+  # Admission is under test: no node matches, so the image is never pulled.
+  nodeSelector:
+    harborlab.io/e2e: unschedulable
+  containers:
+    - name: main
+      image: public.ecr.aws/docker/library/busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: allow-listed-registry
+spec:
+  # Admission is under test: no node matches, so the image is never pulled.
+  nodeSelector:
+    harborlab.io/e2e: unschedulable
+  containers:
+    - name: main
+      image: registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a

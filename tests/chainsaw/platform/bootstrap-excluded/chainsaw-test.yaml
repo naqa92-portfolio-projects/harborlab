@@ -1,0 +1,90 @@
+# The bootstrap namespaces kube-system, cilium, argocd and kyverno are excluded by name: even labelled
+# platform, an off-list pod in each yields no policy result, while the same pod in a platform namespace
+# (control) is reported within the same wait.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: platform-bootstrap-excluded
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: platform
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: the bootstrap namespaces carry the platform tier label
+      try:
+        - script:
+            content: kubectl label namespace kube-system kyverno harborlab.io/tier=platform --overwrite
+            check:
+              ($error == null): true
+        - apply:
+            file: namespaces.yaml
+      cleanup:
+        - script:
+            content: kubectl label namespace kube-system kyverno harborlab.io/tier-
+    - name: an off-list pod runs in each bootstrap namespace and in the platform namespace
+      try:
+        - apply:
+            file: pods.yaml
+        - apply:
+            file: control.yaml
+    - name: the control pod is reported
+      try:
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: platform-off-list
+              (length(results[?policy == 'platform-registry-allow-list' && result == 'fail']) > `0`): true
+        - sleep:
+            duration: 20s
+    - name: no PolicyReport exists for the bootstrap pods
+      try:
+        - error:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              metadata:
+                namespace: kube-system
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: bootstrap-off-list
+        - error:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              metadata:
+                namespace: cilium
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: bootstrap-off-list
+        - error:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              metadata:
+                namespace: argocd
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: bootstrap-off-list
+        - error:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              metadata:
+                namespace: kyverno
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: bootstrap-off-list

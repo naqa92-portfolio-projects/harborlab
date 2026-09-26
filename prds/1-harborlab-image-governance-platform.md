@@ -44,7 +44,7 @@
 
 ## State
 phase: 2
-milestone: 3/10
+milestone: 4/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
@@ -57,6 +57,7 @@ notes-m3: red 065c9756; CAT-003 amended — Harbor github-ghcr adapter cannot li
 resolved-m3: human (2026-09-26) — harbor_replicated loop must treat Succeed/Success as success (Harbor replication API vocabulary); Decision 4 → internal CA via trust-manager at runtime; red rework 45e429d (trust_bundle, golden_dockerfiles, replication loop fixed); coder next: trust-manager — done dac344c 159db69; gate note: Argo CD v3.5.3 panics (counter cannot decrease) when the WSL2 clock steps back, can block task up
 pr: none
 findings:
+- T1 pending — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
 demo:
 
 ## Milestones
@@ -64,7 +65,7 @@ demo:
 - [x] M0 — Spike: on a minimal kind cluster, a keyless-signed and attested GHCR image replicated into Harbor still verifies with cosign and is admitted by a Kyverno ImageValidatingPolicy on its Harbor reference; a containerd mirror to a Harbor proxy cache with upstream fallback is proven; findings recorded in an ADR, attestation format adjusted if needed (indépendant)
 - [x] M1 — Foundation: devbox, Taskfile, local CA, kind with containerd mirrors, Cilium + Gateway API, cert-manager, ArgoCD app-of-apps, OpenBao + ESO, CNPG; `task up`/`task down` converge (dépend de M0)
 - [x] M2 — Registry: Harbor on CNPG deployed by ArgoCD, `task harbor:configure` idempotent (proxy caches, `golden`/`apps` replication from GHCR, robots in OpenBao, immutability, retention, deployment security, webhooks) (dépend de M1)
-- [ ] M3 — Image factory: `images/catalog.yaml` + generators, golden Python/Java on DHI, reusable `build-image.yml` (SBOM CDX+SPDX, SLSA, keyless cosign, Trivy `--vex oci`), platform CI hygiene and lint, Renovate (dépend de M2)
+- [x] M3 — Image factory: `images/catalog.yaml` + generators, golden Python/Java on DHI, reusable `build-image.yml` (SBOM CDX+SPDX, SLSA, keyless cosign, Trivy `--vex oci`), platform CI hygiene and lint, Renovate (dépend de M2)
 - [ ] M4 — Admission: Kyverno CEL policies per trust tier fed by the catalog, PSA restricted, digest mutation, `kyverno test` + Chainsaw E2E in GitHub Actions (dépend de M3)
 - [ ] M5 — Golden-path apps: `dt-bridge` skeleton and `hello-java` built through the reusable workflow and deployed by ArgoCD in a workload namespace (dépend de M4)
 - [ ] M6 — Vulnerability management: Dependency-Track 5.1 on CNPG, Harbor webhook → `dt-bridge` → DT SBOM upload, DHI OpenVEX → CycloneDX VEX conversion, pytest coverage (dépend de M5)

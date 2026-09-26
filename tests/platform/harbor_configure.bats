@@ -25,9 +25,11 @@ PROXY_CACHES=(
 )
 
 # "<project>|<replication policy>|<GHCR name filter>"
+# Harbor's github-ghcr adapter cannot list GHCR repositories: a name filter with a wildcard fails
+# every execution ("only support specific repository name"); a specific name or one {a,b} list works.
 GOVERNED_PROJECTS=(
-  "golden|golden-from-ghcr|naqa92-portfolio-projects/harborlab/golden/**"
-  "apps|apps-from-ghcr|naqa92-portfolio-projects/harborlab/apps/**"
+  "golden|golden-from-ghcr|naqa92-portfolio-projects/harborlab/golden/{python,java}"
+  "apps|apps-from-ghcr|naqa92-portfolio-projects/harborlab/apps/{dt-bridge,hello-java}"
 )
 REPLICATION_REGISTRY=ghcr
 

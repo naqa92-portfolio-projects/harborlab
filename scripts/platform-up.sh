@@ -187,6 +187,8 @@ ensure_openbao() {
     (umask 077 && mkdir -p "$(dirname "$OPENBAO_INIT")")
     (umask 077 && bao_exec bao operator init -key-shares=1 -key-threshold=1 -format=json >"$OPENBAO_INIT.tmp")
     mv "$OPENBAO_INIT.tmp" "$OPENBAO_INIT"
+    # A leftover OpenTofu state is encrypted with the Transit key of a previous OpenBao.
+    rm -f "$REPO_ROOT/tofu/harbor/terraform.tfstate" "$REPO_ROOT/tofu/harbor/terraform.tfstate.backup"
   fi
   [ -s "$OPENBAO_INIT" ] || die "OpenBao is initialised but $OPENBAO_INIT is missing; run task down then task up"
 

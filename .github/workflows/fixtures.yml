@@ -1,0 +1,60 @@
+name: fixtures
+
+# Admission fixture images for kyverno test and Chainsaw, public on GHCR, each tagged `e2e`.
+on:
+  push:
+    branches:
+      - main
+      - prd-*
+    paths:
+      - tests/fixtures/images/**
+      - .github/workflows/fixtures.yml
+      - .github/workflows/build-image.yml
+      - scripts/publish-fixtures.sh
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: fixtures-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        fixture: [compliant, missing-labels, deprecated-base, eol-base, unknown-base]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: fixtures/${{ matrix.fixture }}
+      context: tests/fixtures/images/${{ matrix.fixture }}
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag e2e and publish the copies
+        run: devbox run -q -- ./scripts/publish-fixtures.sh "ghcr.io/$GITHUB_REPOSITORY" "$GITHUB_SHA"

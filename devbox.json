@@ -18,7 +18,9 @@
     "hadolint@2.14.0",
     "trivy@0.74.0",
     "kube-linter@0.8.3",
-    "syft@1.51.0"
+    "syft@1.51.0",
+    "kyverno@1.19.0",
+    "kyverno-chainsaw@0.2.15"
   ],
   "shell": {
     "init_hook": [],

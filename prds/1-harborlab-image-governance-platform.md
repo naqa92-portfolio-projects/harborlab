@@ -44,7 +44,7 @@
 
 ## State
 phase: 2
-milestone: 2/10
+milestone: 3/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
@@ -52,10 +52,7 @@ gate: none
 red_ahead: none
 decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest, not tag; wait ≤240s (Harbor ManifestCache 10×20s); test image shares no layer with the node — human, 2026-09-26 (test amended aa48447, 3/3 pass on coder commits ca0d758..9927239)
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret
-notes-m2: red 305d026; dhi.io fallback must be proven (criterion 4) via pod imagePullSecret delivered by ESO from OpenBao platform/dhi; DHI token enters OpenBao at M2 (dhi-proxy endpoint needs it)
-notes-m2b: DHI_USERNAME provided by the human (.env + GH secret), .env re-synced; M2 red d5be19e, coder next
-notes-m2c: red rework 0c14ff1; coder M2 commits 9cdcded 2bd927c 3f1882e 3fb4857 24f44d8 ec3cb3e f69272f (OpenTofu); gate notes: robot secret_wo_version manual bump on rotation, deprecated vault data source for dhi access_secret
-resolved-m2: human chose (2026-09-26) OpenTofu + goharbor provider (Decision 8 rewritten) and robot credential check via GET /v2/ (Harbor v2auth login target → 401 on bad creds); was: M2 — coder 9cdcded..3fb4857, 16/17 green. (a) coder objection: harbor_configure test "leaves Harbor state unchanged" asserts wrong robot secret → 401 but Harbor token service returns anonymous 200 when a scope is given (401 only without scope). (b) Decision 8 deviation: config via Harbor REST API (curl) instead of harbor-cli — harbor-cli 0.0.26 cannot read password from piped stdin (PR #944 closed unmerged), prints robot secrets, lacks retention schedule / immutable non-interactive / replication dest_namespace (#798 open); criterion 25 ADR title impacted
+notes-m2: human decisions — dhi.io fallback proven via ESO pull secret; DHI_USERNAME added; Decision 8 → OpenTofu; robot check via GET /v2/. M2 coder commits 9cdcded 2bd927c 3f1882e 3fb4857 24f44d8 ec3cb3e f69272f (OpenTofu); gate notes: robot secret_wo_version manual bump on rotation, deprecated vault data source for dhi access_secret
 pr: none
 findings:
 demo:
@@ -64,7 +61,7 @@ demo:
 
 - [x] M0 — Spike: on a minimal kind cluster, a keyless-signed and attested GHCR image replicated into Harbor still verifies with cosign and is admitted by a Kyverno ImageValidatingPolicy on its Harbor reference; a containerd mirror to a Harbor proxy cache with upstream fallback is proven; findings recorded in an ADR, attestation format adjusted if needed (indépendant)
 - [x] M1 — Foundation: devbox, Taskfile, local CA, kind with containerd mirrors, Cilium + Gateway API, cert-manager, ArgoCD app-of-apps, OpenBao + ESO, CNPG; `task up`/`task down` converge (dépend de M0)
-- [ ] M2 — Registry: Harbor on CNPG deployed by ArgoCD, `task harbor:configure` idempotent (proxy caches, `golden`/`apps` replication from GHCR, robots in OpenBao, immutability, retention, deployment security, webhooks) (dépend de M1)
+- [x] M2 — Registry: Harbor on CNPG deployed by ArgoCD, `task harbor:configure` idempotent (proxy caches, `golden`/`apps` replication from GHCR, robots in OpenBao, immutability, retention, deployment security, webhooks) (dépend de M1)
 - [ ] M3 — Image factory: `images/catalog.yaml` + generators, golden Python/Java on DHI, reusable `build-image.yml` (SBOM CDX+SPDX, SLSA, keyless cosign, Trivy `--vex oci`), platform CI hygiene and lint, Renovate (dépend de M2)
 - [ ] M4 — Admission: Kyverno CEL policies per trust tier fed by the catalog, PSA restricted, digest mutation, `kyverno test` + Chainsaw E2E in GitHub Actions (dépend de M3)
 - [ ] M5 — Golden-path apps: `dt-bridge` skeleton and `hello-java` built through the reusable workflow and deployed by ArgoCD in a workload namespace (dépend de M4)

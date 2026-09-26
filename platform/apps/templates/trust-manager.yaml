@@ -1,0 +1,63 @@
+# Publishes the public certificate of the local CA to workload namespaces as PEM and PKCS#12.
+# Only key tls.crt is sourced: harborlab-ca also holds the CA private key.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trust-manager
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: trust-manager
+    targetRevision: v0.25.0
+    helm:
+      valuesObject:
+        crds:
+          enabled: true
+        app:
+          trust:
+            namespace: cert-manager
+        # No Bundle uses useDefaultCAs.
+        defaultPackage:
+          enabled: false
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        extraObjects:
+          - apiVersion: trust.cert-manager.io/v1alpha1
+            kind: Bundle
+            metadata:
+              name: harborlab-trust
+              annotations:
+                # After the Deployment is healthy: the Bundle webhook must answer.
+                argocd.argoproj.io/sync-wave: "1"
+            spec:
+              sources:
+                - secret:
+                    name: harborlab-ca
+                    key: tls.crt
+              target:
+                configMap:
+                  key: ca.crt
+                additionalFormats:
+                  pkcs12:
+                    key: truststore.p12
+                    profile: Modern2023
+                namespaceSelector:
+                  matchLabels:
+                    harborlab.io/tier: workload
+  ignoreDifferences:
+    {{- toYaml .Values.webhookCaBundleDifferences | nindent 4 }}
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

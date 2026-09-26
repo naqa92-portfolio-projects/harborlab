@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deletes the harborlab kind cluster, its isolated kubeconfig and the OpenBao keys bound to it.
+# Deletes the harborlab kind cluster, its isolated kubeconfig, and the OpenBao keys and OpenTofu state bound to it.
 # The local CA is kept so that hosts trusting it keep doing so; the caller's kubeconfig is untouched.
 set -euo pipefail
 
@@ -17,3 +17,5 @@ else
 fi
 rm -f "$PLATFORM_KUBECONFIG"
 rm -rf "$REPO_ROOT/.local/openbao"
+# The OpenTofu state is encrypted with a Transit key that dies with this OpenBao.
+rm -f "$REPO_ROOT/tofu/harbor/terraform.tfstate" "$REPO_ROOT/tofu/harbor/terraform.tfstate.backup"

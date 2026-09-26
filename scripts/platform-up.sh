@@ -213,6 +213,17 @@ ensure_openbao() {
       bound_service_account_namespaces=openbao token_policies=platform-audit token_ttl=15m >/dev/null
     bao write auth/kubernetes/role/external-secrets bound_service_account_names=openbao-reader \
       bound_service_account_namespaces=external-secrets token_policies=external-secrets token_ttl=15m >/dev/null
+    bao secrets list -format=json | grep -q "\"transit/\"" || bao secrets enable -path=transit transit >/dev/null
+    bao read transit/keys/harbor-tofu-state >/dev/null 2>&1 || bao write -f transit/keys/harbor-tofu-state >/dev/null
+    printf "%s\n" "path \"transit/datakey/plaintext/harbor-tofu-state\" { capabilities = [\"update\"] }" \
+      "path \"transit/decrypt/harbor-tofu-state\" { capabilities = [\"update\"] }" \
+      "path \"secret/data/platform/harbor-admin\" { capabilities = [\"read\"] }" \
+      "path \"secret/data/platform/harbor-robot-dt-bridge\" { capabilities = [\"read\"] }" \
+      "path \"secret/data/platform/dhi\" { capabilities = [\"read\"] }" >/tmp/harbor-tofu.hcl
+    bao policy write harbor-tofu /tmp/harbor-tofu.hcl >/dev/null
+    rm -f /tmp/harbor-tofu.hcl
+    bao write auth/kubernetes/role/harbor-tofu bound_service_account_names=harbor-tofu \
+      bound_service_account_namespaces=openbao token_policies=harbor-tofu token_ttl=15m >/dev/null
   ' </dev/null
 
   log "seeding the local CA into OpenBao secret/platform/local-ca"
@@ -318,5 +329,5 @@ ensure_root_application
 ensure_openbao
 seed_credentials
 wait_for_convergence
-"$REPO_ROOT/scripts/harbor-configure.sh"
+"$REPO_ROOT/scripts/harbor-tofu.sh" configure
 log "platform ready (kubeconfig: $PLATFORM_KUBECONFIG)"

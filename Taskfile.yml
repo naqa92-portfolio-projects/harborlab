@@ -10,9 +10,20 @@ tasks:
       - ./scripts/platform-up.sh
 
   harbor:configure:
-    desc: Converge the Harbor configuration (proxy caches, governed projects, replication, robots, tag rules, webhooks)
+    desc: Seed missing robot secrets in OpenBao, then apply the OpenTofu Harbor configuration (tofu/harbor)
     cmds:
-      - ./scripts/harbor-configure.sh
+      - ./scripts/harbor-tofu.sh configure
+
+  harbor:plan:
+    desc: Plan the OpenTofu Harbor configuration; exits 0 only when nothing would change
+    cmds:
+      - ./scripts/harbor-tofu.sh plan
+
+  harbor:tofu:
+    desc: 'Run tofu <args> in tofu/harbor with the OpenBao and Harbor environment (task harbor:tofu -- show -json)'
+    silent: true
+    cmds:
+      - ./scripts/harbor-tofu.sh tofu {{.CLI_ARGS}}
 
   down:
     desc: Delete the kind platform and its isolated kubeconfig

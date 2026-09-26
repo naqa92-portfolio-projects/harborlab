@@ -3,3 +3,6 @@
 # Isolated kubeconfig, local CA and OpenBao keys: generated at runtime, never committed.
 .kube/
 .local/
+# OpenTofu state (encrypted, bound to one cluster) and provider cache.
+tofu/**/terraform.tfstate*
+.terraform/

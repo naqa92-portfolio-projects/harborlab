@@ -164,13 +164,14 @@ def openvex_to_cyclonedx(document: dict, sbom: dict) -> dict:
         justification = JUSTIFICATIONS.get(statement.get("justification") or "")
         if justification:
             analysis["justification"] = justification
-        vulnerabilities.append(
-            {
-                "id": statement["vulnerability"]["name"],
-                "analysis": analysis,
-                "affects": [{"ref": ref} for ref in refs],
-            }
-        )
+        vulnerability = {
+            "id": statement["vulnerability"]["name"],
+            "analysis": analysis,
+            "affects": [{"ref": ref} for ref in refs],
+        }
+        # CycloneDX requires unique vulnerabilities; DHI documents repeat statements.
+        if vulnerability not in vulnerabilities:
+            vulnerabilities.append(vulnerability)
 
     return {
         "bomFormat": "CycloneDX",

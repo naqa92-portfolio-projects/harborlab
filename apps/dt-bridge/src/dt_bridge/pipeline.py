@@ -262,7 +262,7 @@ class Bridge:
                 entry["affects"] += [{"ref": ref} for ref in refs if {"ref": ref} not in entry["affects"]]
                 matched_refs.update(refs)
             remaining = [affect for affect in vulnerability["affects"] if affect["ref"] not in matched_refs]
-            if remaining:
+            if remaining and {**vulnerability, "affects": remaining} not in unmatched:
                 unmatched.append({**vulnerability, "affects": remaining})
         return {**vex, "vulnerabilities": list(rekeyed.values()) + unmatched}
 

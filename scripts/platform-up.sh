@@ -379,7 +379,7 @@ dt_admin() {
 ensure_dependency_track() {
   local api="https://$DT_HOST/api" code team permission
   log "bootstrapping Dependency-Track (admin password, dt-bridge team and API key, vulnerability sources)"
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 180); do
     curl -sf --cacert "$CA_DIR/ca.crt" -o /dev/null "$api/version" && break
     sleep 10
   done
@@ -467,8 +467,9 @@ ensure_argocd
 ensure_root_application
 ensure_openbao
 seed_credentials
-wait_for_convergence "$WORKLOAD_APPLICATIONS"
+# Before the first convergence: dt-bridge, a child of root, cannot start without its DT API key.
 ensure_dependency_track
+wait_for_convergence "$WORKLOAD_APPLICATIONS"
 "$REPO_ROOT/scripts/harbor-tofu.sh" configure
 replicate_governed_projects
 wait_for_convergence

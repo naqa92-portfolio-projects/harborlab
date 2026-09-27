@@ -88,6 +88,11 @@ spec:
             # every `task demo:runtime-shell` run raises its own alert.
             ruleCooldown:
               ruleCooldownDuration: 1s
+            extra:
+              # Every enabled rule applies to every container outside the excluded namespaces, as the
+              # default all-rules binding does, from the container's start: a binding is only attached
+              # once node-agent's pod watch catches up, seconds after the container starts.
+              ignoreRuleBindings: true
           resources:
             requests:
               cpu: 100m

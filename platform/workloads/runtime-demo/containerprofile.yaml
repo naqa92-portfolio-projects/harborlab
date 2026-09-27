@@ -1,10 +1,10 @@
-# Authored Kubescape profile of the runtime-demo container (pod label kubescape.io/user-defined-profile):
-# node-agent enforces it from container start instead of learning one, so a recreated pod raises runtime
-# alerts at once. Recorded from the container's learned profile; a shell is not part of it.
+# Authored Kubescape profile of the runtime-demo container, found by node-agent as <pod label
+# kubescape.io/user-defined-profile>-<container>: enforced from container start instead of a learned
+# one. Recorded from the container's learned profile; a shell is not part of it.
 apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
 kind: ContainerProfile
 metadata:
-  name: runtime-demo
+  name: runtime-demo-runtime-demo
   namespace: runtime-demo
   annotations:
     kubescape.io/managed-by: User

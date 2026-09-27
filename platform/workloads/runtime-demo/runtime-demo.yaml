@@ -32,7 +32,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: runtime-demo
-        # node-agent enforces the authored ContainerProfile runtime-demo (containerprofile.yaml) instead of
+        # node-agent enforces the authored ContainerProfile runtime-demo-runtime-demo (containerprofile.yaml) instead of
         # learning one, so any shell run in the container is unexpected.
         kubescape.io/user-defined-profile: runtime-demo
     spec:

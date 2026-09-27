@@ -89,18 +89,21 @@ The images of the Harbor-based scenarios are the admission fixtures of `tests/fi
 
 - Target: the `runtime-demo` Deployment (namespace `runtime-demo`, a governed Harbor image that carries a
   shell). Its pods carry `kubescape.io/user-defined-profile: runtime-demo`: Kubescape's node-agent enforces
-  the authored ContainerProfile `runtime-demo` (its normal processes, files, syscalls and capabilities) from
+  the authored ContainerProfile `runtime-demo-runtime-demo` (its normal processes, files, syscalls and capabilities) from
   container start, instead of learning a profile first.
+  node-agent applies every enabled rule to every monitored container from its start
+  (`ignoreRuleBindings`), so the profile is the only thing a new container waits for.
 - The task waits until node-agent reports it has loaded that profile for the current container (its log
-  line `adopted user-authored ContainerProfile as authoritative base`, read from VictoriaLogs), runs
+  line `adopted user-authored ContainerProfile as authoritative base`, from node-agent's log or, once
+  rotated, VictoriaLogs), runs
   `sh -c 'echo …'` once with `kubectl exec`, prints `runtime-shell target: <namespace>/<pod>/<container>`,
   then waits for the Kubescape alert of that shell and prints `runtime-shell alert: <alert>`.
 - Reaction: Kubescape raises `Unexpected process launched` (rule `R0001`) for the shell. The alert is in
   VictoriaLogs within seconds; in Grafana, open *Explore*, datasource `victorialogs`, and query
   `RuleID:R0001 AND RuntimeK8sDetails.namespace:="runtime-demo"`. The `image posture` dashboard's runtime
   panel counts it for golden image `python`.
-- The task exits non-zero when node-agent has not loaded the profile within 60 s or no alert comes within
-  45 s.
+- The task exits non-zero when node-agent has not loaded the profile within 90 s (it retries a failed
+  profile fetch every minute) or no alert comes within 20 s.
 
 ## `demo:vex` — vendor VEX reaches Dependency-Track
 

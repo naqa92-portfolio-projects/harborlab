@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
-# Golden-path apps live on the kind platform: deployed by Argo CD into workload namespaces, admitted by
-# the live Kyverno workload policies on their Harbor digest, trusting the local CA delivered at runtime.
+# Golden-path apps live on the kind platform: deployed by Argo CD into workload namespaces, their running pod
+# spec admitted now by the live Kyverno workload policies (fail-closed webhooks), trusting the local CA at runtime.
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 PLATFORM_KUBECONFIG="$REPO_ROOT/.kube/harborlab.yaml"
@@ -17,8 +17,10 @@ CA_SECRET=harborlab-ca
 APP_PORT=8080
 OIDC_ISSUER=https://token.actions.githubusercontent.com
 BUILD_IDENTITY='^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/(main|prd-.+)$'
-WORKLOAD_POLICIES=(workload-image-signature workload-golden-base workload-golden-base-deprecated workload-image-labels workload-registry)
-REPORT_TIMEOUT_SECONDS=150
+# Workload policies by admission action: the Deny ones block, the Warn one only warns (Ignore on webhook failure).
+DENY_POLICIES=(workload-image-signature workload-golden-base workload-image-labels workload-registry)
+WARN_POLICIES=(workload-golden-base-deprecated)
+PROBE_POD=admission-probe
 
 fail() {
   echo "$*" >&2
@@ -114,63 +116,71 @@ assert_harbor_image_verifies() {
     fail "the base sha256:${bases[0]} of $ref is not a supported entry of $CATALOG (status: '${status:-absent}')"
 }
 
-# The PolicyReport of each app pod holds a pass from every workload policy and no other result of them.
-assert_admission_reports() {
-  local namespace="$1" pod policy results deadline
-  for pod in "${APP_PODS[@]}"; do
-    deadline=$((SECONDS + REPORT_TIMEOUT_SECONDS))
-    while :; do
-      results="$(kubectl -n "$namespace" get policyreports.wgpolicyk8s.io -o json |
-        jq -c --arg pod "$pod" '[.items[] | select(.scope.kind == "Pod" and .scope.name == $pod) | .results[]?
-          | select(.policy | startswith("workload-")) | {policy, result}] | unique')"
-      missing=""
-      for policy in "${WORKLOAD_POLICIES[@]}"; do
-        jq -e --arg p "$policy" 'any(.[]; .policy == $p and .result == "pass")' <<<"$results" >/dev/null ||
-          missing+="$policy "
-      done
-      [ -n "$missing" ] || break
-      [ "$SECONDS" -lt "$deadline" ] ||
-        fail "PolicyReport of pod $namespace/$pod has no pass from: $missing(results: $results)"
-      sleep 10
-    done
-    jq -e 'all(.[]; .result == "pass")' <<<"$results" >/dev/null ||
-      fail "PolicyReport of pod $namespace/$pod holds non-pass workload results: $results"
-  done
+# Pod $PROBE_POD with the labels and exact spec of the first app pod, as a manifest on stdout; with $2, its app
+# container $1 runs image $2 instead.
+probe_pod_manifest() {
+  jq --arg c "$1" --arg image "${2:-}" --arg name "$PROBE_POD" '[.items[] | select(.metadata.deletionTimestamp == null)][0]
+    | {apiVersion: "v1", kind: "Pod", metadata: {name: $name, labels: (.metadata.labels // {})},
+       spec: (.spec | .containers |= map(if .name == $c and $image != "" then .image = $image else . end))}' \
+    "$BATS_TEST_TMPDIR/pods.json"
 }
 
-# A restricted pod on image $2, server dry-run in namespace $1: goes through the live admission chain.
+# Server dry-run of the manifest in file $2 in namespace $1: goes through the live admission chain.
 dry_run_pod() {
-  kubectl -n "$1" create --dry-run=server -o name -f - 2>&1 <<EOF
-apiVersion: v1
-kind: Pod
-metadata:
-  name: admission-probe
-spec:
-  securityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
-  containers:
-    - name: probe
-      image: $2
-      securityContext:
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop: [ALL]
-EOF
+  kubectl -n "$1" create --dry-run=server -o name -f "$2" 2>&1
 }
 
-# Live admission now: the app's Harbor digest is admitted without warning in its namespace, and the same
-# digest served from GHCR is denied by the workload registry policy (control: the policies enforce there).
+# Live admission now: the running app pod's exact spec (its Harbor digest) is admitted without warning in its
+# namespace, and the same spec with that digest served from GHCR is denied by workload-registry (control).
 assert_live_admission() {
-  local namespace="$1" app="$2" digest="$3"
-  run dry_run_pod "$namespace" "$HARBOR_HOST/$APPS_PROJECT/$app@$digest"
-  [ "$status" -eq 0 ] || fail "live admission denies $HARBOR_HOST/$APPS_PROJECT/$app@$digest in $namespace: $output"
-  [[ "$output" != *Warning* ]] || fail "live admission warns on $HARBOR_HOST/$APPS_PROJECT/$app@$digest in $namespace: $output"
-  run dry_run_pod "$namespace" "$GHCR_APPS/$app@$digest"
+  local namespace="$1" app="$2" digest="$3" manifest="$BATS_TEST_TMPDIR/probe.json"
+  probe_pod_manifest "$app" >"$manifest"
+  run dry_run_pod "$namespace" "$manifest"
+  [ "$status" -eq 0 ] || fail "live admission denies the spec of pod $namespace/${APP_PODS[0]}: $output"
+  [[ "$output" != *Warning* ]] || fail "live admission warns on the spec of pod $namespace/${APP_PODS[0]}: $output"
+  probe_pod_manifest "$app" "$GHCR_APPS/$app@$digest" >"$manifest"
+  run dry_run_pod "$namespace" "$manifest"
   [ "$status" -ne 0 ] || fail "control: live admission admits the GHCR reference of $app in $namespace"
   [[ "$output" == *workload-registry* ]] ||
     fail "control: the GHCR reference of $app is not denied by workload-registry in $namespace: $output"
+}
+
+# Every workload policy is served by a Kyverno validating webhook that dry-runs reach and that matches pod creation
+# in namespace $1 (namespace and object selectors, no match condition); the Deny policies' webhooks fail closed.
+# Together with assert_live_admission this proves the running pod's spec is admitted by those policies.
+assert_admission_webhooks() {
+  local namespace="$1" pod_labels ns_labels policies webhooks policy actions matched
+  ns_labels="$(kubectl get namespace "$namespace" -o json | jq -c '.metadata.labels // {}')"
+  pod_labels="$(jq -c '[.items[] | select(.metadata.deletionTimestamp == null)][0].metadata.labels // {}' \
+    "$BATS_TEST_TMPDIR/pods.json")"
+  policies="$(kubectl get imagevalidatingpolicies.policies.kyverno.io,validatingpolicies.policies.kyverno.io -o json)"
+  webhooks="$(kubectl get validatingwebhookconfigurations -o json)"
+  for policy in "${DENY_POLICIES[@]}" "${WARN_POLICIES[@]}"; do
+    actions="$(jq -c --arg p "$policy" '[.items[] | select(.metadata.name == $p) | .spec.validationActions][0] // null' \
+      <<<"$policies")"
+    [ "$actions" != null ] || fail "Kyverno policy $policy does not exist"
+    matched="$(jq -c --arg p "$policy" --argjson nsl "$ns_labels" --argjson podl "$pod_labels" '
+      def selects($l): ((.matchLabels // {}) | to_entries | all(.[]; $l[.key] == .value))
+        and ((.matchExpressions // []) | all(.[]; .key as $k | .values as $v | if .operator == "In" then any($v[]; . == $l[$k])
+          elif .operator == "NotIn" then ($l[$k] == null or all($v[]; . != $l[$k]))
+          elif .operator == "Exists" then $l[$k] != null elif .operator == "DoesNotExist" then $l[$k] == null else false end));
+      [.items[] | .metadata.name as $cfg | .webhooks[]?
+        | select(.clientConfig.service.namespace == "kyverno" and ((.clientConfig.service.path // "") | split("/") | index($p) != null))
+        | {cfg: $cfg, name, failurePolicy,
+           reaches_dry_run: (.sideEffects | IN("None", "NoneOnDryRun")),
+           matches: ((.namespaceSelector // {} | selects($nsl)) and (.objectSelector // {} | selects($podl))
+             and ((.matchConditions // []) | length == 0)
+             and any(.rules[]?; (.operations | any(.[]; IN("CREATE", "*"))) and (.resources | any(.[]; IN("pods", "*")))))}]' \
+      <<<"$webhooks")"
+    jq -e 'any(.[]; .matches and .reaches_dry_run)' <<<"$matched" >/dev/null ||
+      fail "no Kyverno webhook of policy $policy reaches a dry-run pod creation in namespace $namespace (labels $ns_labels): $matched"
+    if printf '%s\n' "${DENY_POLICIES[@]}" | grep -qxF "$policy"; then
+      jq -e 'index("Deny") != null' <<<"$actions" >/dev/null ||
+        fail "Kyverno policy $policy has validationActions $actions, not Deny"
+      jq -e 'all(.[] | select(.matches); .failurePolicy == "Fail")' <<<"$matched" >/dev/null ||
+        fail "a Kyverno webhook of Deny policy $policy matching namespace $namespace does not fail closed: $matched"
+    fi
+  done
 }
 
 # Container $2 of Deployment $1 (namespace $1) mounts ConfigMap harborlab-trust at /etc/harborlab-trust.
@@ -189,8 +199,8 @@ assert_trust_bundle_mounted() {
   assert_deployed_by_argocd "$app"
   assert_harbor_digest_images "$app"
   assert_harbor_image_verifies "$HARBOR_HOST/$APPS_PROJECT/$app@$APP_DIGEST"
-  assert_admission_reports "$app"
   assert_live_admission "$app" "$app" "$APP_DIGEST"
+  assert_admission_webhooks "$app"
 
   run kubectl get --raw "/api/v1/namespaces/$app/services/http:$app:$APP_PORT/proxy/healthz"
   [ "$status" -eq 0 ] || fail "GET /healthz on Service $app/$app:$APP_PORT failed: $output"
@@ -213,8 +223,8 @@ assert_trust_bundle_mounted() {
   assert_deployed_by_argocd "$app"
   assert_harbor_digest_images "$app"
   assert_harbor_image_verifies "$HARBOR_HOST/$APPS_PROJECT/$app@$APP_DIGEST"
-  assert_admission_reports "$app"
   assert_live_admission "$app" "$app" "$APP_DIGEST"
+  assert_admission_webhooks "$app"
 
   run kubectl get --raw "/api/v1/namespaces/$app/services/http:$app:$APP_PORT/proxy/"
   [ "$status" -eq 0 ] && [ -n "$output" ] || fail "GET / on Service $app/$app:$APP_PORT failed: $output"

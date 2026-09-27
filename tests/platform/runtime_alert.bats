@@ -50,7 +50,7 @@ alert_rows() {
     fail "task demo:runtime-shell printed no 'runtime-shell target: <namespace>/<pod>/<container>' line: $(tail -n 5 <<<"$output")"
   namespace="${BASH_REMATCH[1]}" pod="${BASH_REMATCH[2]}" container="${BASH_REMATCH[3]}"
 
-  kubectl get namespace "$namespace" -l "$WORKLOAD_LABEL" -o name | grep -q . ||
+  kubectl get namespace -l "$WORKLOAD_LABEL" -o name | grep -qx "namespace/$namespace" ||
     fail "target namespace $namespace is not labelled $WORKLOAD_LABEL: the shell did not run in a workload container"
   image="$(kubectl -n "$namespace" get pod "$pod" -o json |
     jq -r --arg c "$container" '.spec.containers[] | select(.name == $c) | .image')"

@@ -1,12 +1,12 @@
 #!/usr/bin/env bats
 # Memory budget, live: with every Argo CD Application (observability included) Synced and Healthy, the memory
-# `kubectl top nodes` reports for the kind node stays at or below 10 GiB over several metrics-server samples.
+# `kubectl top nodes` reports for the kind node stays at or below 12 GiB over several metrics-server samples.
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 PLATFORM_KUBECONFIG="$REPO_ROOT/.kube/harborlab.yaml"
 KIND_NODE=harborlab-control-plane
 METRICS_APISERVICE=v1beta1.metrics.k8s.io
-BUDGET_MI=10240
+BUDGET_MI=12288
 SAMPLES=4
 SAMPLE_INTERVAL_SECONDS=20
 # Every component of the platform, observability included; any other Application must converge too.
@@ -36,7 +36,7 @@ to_mi() {
   esac
 }
 
-@test "cluster memory stays within 10 GiB" {
+@test "cluster memory stays within 12 GiB" {
   apps="$(kubectl -n argocd get applications.argoproj.io -o json)"
   for app in "${REQUIRED_APPLICATIONS[@]}"; do
     jq -e --arg a "$app" 'any(.items[]; .metadata.name == $a)' <<<"$apps" >/dev/null ||

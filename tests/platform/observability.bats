@@ -34,6 +34,8 @@ DENIED_DEPLOYMENT=dt-bridge
 DENIED_POD=observability-denied-probe
 DENYING_POLICY=workload-registry
 POLICY_REPORTER_HOST=policy-reporter.127.0.0.1.nip.io
+# A source no PolicyReport of the cluster uses (filter control).
+ABSENT_SOURCE=harborlab-absent-source
 DASHBOARD_RANGE_MS=3600000
 METRIC_TIMEOUT_SECONDS=300
 EVENT_TIMEOUT_SECONDS=180
@@ -423,6 +425,17 @@ EOF
   done
 }
 
+# Writes to $BATS_TEST_TMPDIR/results.json the Policy Reporter UI results of cluster $1 filtered on namespace $2,
+# source $3 and policy $4; prints nothing and fails when the API does not answer 200.
+policy_reporter_results() {
+  local code
+  code="$(curl -sS --cacert "$PLATFORM_CA" -G -o "$BATS_TEST_TMPDIR/results.json" -w '%{http_code}' \
+    --data-urlencode "namespaces=$2" --data-urlencode "sources=$3" --data-urlencode "policies=$4" \
+    --data-urlencode page=1 --data-urlencode offset=50 \
+    "https://$POLICY_REPORTER_HOST/api/$1/namespace-scoped/results")" && [ "$code" = 200 ] ||
+    fail "Policy Reporter UI results of $2/$4 with source $3 not readable (HTTP ${code:-none})"
+}
+
 @test "Policy Reporter UI lists Kyverno PolicyReports" {
   run curl -sS --cacert "$PLATFORM_CA" -o "$BATS_TEST_TMPDIR/config.json" -w '%{http_code}' \
     "https://$POLICY_REPORTER_HOST/api/config"
@@ -436,17 +449,16 @@ EOF
     | "\($n)|\(.source)|\(.policy)"] | unique[]')
   [ "${#expected[@]}" -gt 0 ] || fail "the cluster holds no Kyverno PolicyReport result: the check would be vacuous"
 
+  # The UI's result items carry no source field: the source is proven by the sources= filter, which the UI passes
+  # to Policy Reporter core; the control shows that filter excludes the results of another source.
   for entry in "${expected[@]}"; do
     IFS='|' read -r namespace source policy <<<"$entry"
-    run curl -sS --cacert "$PLATFORM_CA" -G -o "$BATS_TEST_TMPDIR/results.json" -w '%{http_code}' \
-      --data-urlencode "namespaces=$namespace" --data-urlencode "policies=$policy" \
-      --data-urlencode page=1 --data-urlencode offset=50 \
-      "https://$POLICY_REPORTER_HOST/api/$cluster/namespace-scoped/results"
-    [ "$status" -eq 0 ] && [ "$output" = 200 ] ||
-      fail "Policy Reporter UI results of $namespace/$policy not readable (HTTP $output)"
-    jq -e --arg n "$namespace" --arg s "$source" --arg p "$policy" \
-      'any(.items[]?; .namespace == $n and .policy == $p and ((.source // "") | ascii_downcase) == ($s | ascii_downcase))' \
+    policy_reporter_results "$cluster" "$namespace" "$source" "$policy"
+    jq -e --arg n "$namespace" --arg p "$policy" 'any(.items[]?; .namespace == $n and .policy == $p)' \
       "$BATS_TEST_TMPDIR/results.json" >/dev/null ||
       fail "Policy Reporter UI does not list the $source result of policy $policy in namespace $namespace: $(head -c 300 "$BATS_TEST_TMPDIR/results.json")"
+    policy_reporter_results "$cluster" "$namespace" "$ABSENT_SOURCE" "$policy"
+    jq -e '(.items // []) | length == 0' "$BATS_TEST_TMPDIR/results.json" >/dev/null ||
+      fail "control: Policy Reporter UI lists results of $namespace/$policy for source $ABSENT_SOURCE, so its sources= filter is not applied: $(head -c 300 "$BATS_TEST_TMPDIR/results.json")"
   done
 }

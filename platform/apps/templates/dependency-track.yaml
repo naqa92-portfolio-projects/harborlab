@@ -63,9 +63,16 @@ spec:
     - repoURL: {{ .Values.repoURL }}
       targetRevision: {{ .Values.revision }}
       path: platform/dependency-track
+  # The chart's HTTPRoute omits the backendRef group the API server defaults to "".
+  ignoreDifferences:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      jqPathExpressions:
+        - .spec.rules[]?.backendRefs[]?.group
   syncPolicy:
     {{- toYaml .Values.syncPolicy | nindent 4 }}
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
       - SkipDryRunOnMissingResource=true
+      - RespectIgnoreDifferences=true

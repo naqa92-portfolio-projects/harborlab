@@ -1,0 +1,18 @@
+# Runtime-detection demo target in its workload namespace; the image is its Harbor `apps` digest.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: runtime-demo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.revision }}
+    path: platform/workloads/runtime-demo
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}

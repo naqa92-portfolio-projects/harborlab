@@ -51,6 +51,39 @@ spec:
             # Python's default TLS context reads only this file: the golden image bakes no local CA.
             - name: SSL_CERT_FILE
               value: /etc/harborlab-trust/ca.crt
+            - name: HARBOR_CA_FILE
+              value: /etc/harborlab-trust/ca.crt
+            - name: HARBOR_URL
+              value: https://harbor.127.0.0.1.nip.io
+            - name: DT_URL
+              value: http://dependency-track-api-server.dependency-track.svc.cluster.local:8080
+            - name: GOVERNED_PROJECTS
+              value: golden,apps
+            - name: HARBOR_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-robot-dt-bridge
+                  key: username
+            - name: HARBOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-robot-dt-bridge
+                  key: password
+            - name: DT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dependency-track-api-key
+                  key: api-key
+            - name: DHI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: dhi-credentials
+                  key: username
+            - name: DHI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dhi-credentials
+                  key: token
           readinessProbe:
             httpGet:
               path: /healthz

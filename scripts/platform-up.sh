@@ -12,6 +12,10 @@ CA_DIR="$LOCAL_DIR/ca"
 OPENBAO_INIT="$LOCAL_DIR/openbao/init.json"
 REPO_URL=https://github.com/naqa92-portfolio-projects/harborlab.git
 HARBOR_HOST=harbor.127.0.0.1.nip.io
+DT_HOST=dependency-track.127.0.0.1.nip.io
+# Least privilege of the dt-bridge API key: upload BOM and VEX, read findings; no portfolio management.
+DT_BRIDGE_PERMISSIONS=(BOM_UPLOAD PROJECT_CREATION_UPLOAD VIEW_PORTFOLIO VIEW_VULNERABILITY VULNERABILITY_ANALYSIS)
+DT_OSV_ECOSYSTEMS='["Debian:13", "PyPI", "Maven"]'
 
 GATEWAY_API_VERSION=v1.6.1
 CILIUM_CHART_VERSION=1.20.2
@@ -278,6 +282,9 @@ seed_credentials() {
     rm -f "$WORK/token.key" "$WORK/token.crt"
   fi
 
+  random_strings 32 | jq -Rn '{username: "dtrack", password: input}' | seed_once platform/dependency-track-db
+  random_strings 24 | jq -Rn '{password: (input + "Aa1")}' | seed_once platform/dependency-track-admin
+
   # The dhi.io credential comes from the environment (git-ignored .env), read by jq.
   if ! openbao_has platform/dhi; then
     [ -n "${DHI_USERNAME:-}" ] && [ -n "${DHI_TOKEN:-}" ] ||
@@ -357,6 +364,97 @@ replicate_governed_projects() {
   rm -f "$auth"
 }
 
+# Dependency-Track REST call with the admin session; body and headers stay in 0600 files of $WORK.
+# Prints the HTTP status, the response body lands in $WORK/dt-body.json.
+dt_admin() {
+  local method="$1" path="$2"
+  shift 2
+  curl -sS --cacert "$CA_DIR/ca.crt" -H @"$WORK/dt-auth" -X "$method" -o "$WORK/dt-body.json" -w '%{http_code}' \
+    "$@" "https://$DT_HOST/api$path"
+}
+
+# Rotates the default admin password to the one seeded in OpenBao, creates the least-privilege dt-bridge
+# team and its API key (written back to OpenBao, never printed) and restricts the vulnerability sources
+# to OSV. Idempotent: an API key that still authenticates is kept.
+ensure_dependency_track() {
+  local api="https://$DT_HOST/api" code team permission
+  log "bootstrapping Dependency-Track (admin password, dt-bridge team and API key, vulnerability sources)"
+  for _ in $(seq 1 90); do
+    curl -sf --cacert "$CA_DIR/ca.crt" -o /dev/null "$api/version" && break
+    sleep 10
+  done
+  curl -sf --cacert "$CA_DIR/ca.crt" -o /dev/null "$api/version" || die "Dependency-Track API $api is not reachable"
+
+  (umask 077 && bao_root 'bao kv get -mount=secret -field=password platform/dependency-track-admin' </dev/null |
+    jq -Rr '@uri' >"$WORK/dt-admin")
+  [ -s "$WORK/dt-admin" ] || die "OpenBao secret/platform/dependency-track-admin has no password"
+  (umask 077 && { printf 'username=admin&password=admin&newPassword='; tr -d '\n' <"$WORK/dt-admin"
+    printf '&confirmPassword='; tr -d '\n' <"$WORK/dt-admin"; } >"$WORK/dt-force")
+  code="$(curl -sS --cacert "$CA_DIR/ca.crt" -o /dev/null -w '%{http_code}' --data @"$WORK/dt-force" \
+    "$api/v1/user/forceChangePassword")"
+  case "$code" in
+    200) log "Dependency-Track admin password rotated from OpenBao" ;;
+    401) ;;
+    *) die "Dependency-Track admin password rotation failed (HTTP $code)" ;;
+  esac
+  (umask 077 && { printf 'username=admin&password='; tr -d '\n' <"$WORK/dt-admin"; } >"$WORK/dt-login")
+  (umask 077 && curl -sS --fail --cacert "$CA_DIR/ca.crt" --data @"$WORK/dt-login" "$api/v1/user/login" |
+    { printf 'Authorization: Bearer '; cat; echo; } >"$WORK/dt-auth") ||
+    die "Dependency-Track admin login with the OpenBao password failed"
+  rm -f "$WORK/dt-admin" "$WORK/dt-force" "$WORK/dt-login"
+
+  code="$(dt_admin GET /v1/team)"
+  [ "$code" = 200 ] || die "cannot list Dependency-Track teams (HTTP $code)"
+  team="$(jq -r '.[] | select(.name == "dt-bridge") | .uuid' "$WORK/dt-body.json")"
+  if [ -z "$team" ]; then
+    code="$(dt_admin PUT /v1/team -H 'Content-Type: application/json' --data '{"name": "dt-bridge"}')"
+    [ "$code" = 201 ] || die "cannot create the Dependency-Track team dt-bridge (HTTP $code)"
+    team="$(jq -r .uuid "$WORK/dt-body.json")"
+  fi
+  for permission in "${DT_BRIDGE_PERMISSIONS[@]}"; do
+    code="$(dt_admin POST "/v1/permission/$permission/team/$team")"
+    case "$code" in
+      200 | 304) ;;
+      *) die "cannot grant $permission to the Dependency-Track team dt-bridge (HTTP $code)" ;;
+    esac
+  done
+
+  code=000
+  if openbao_has platform/dependency-track-api-key; then
+    code="$(bao_root 'bao kv get -mount=secret -field=api-key platform/dependency-track-api-key' </dev/null |
+      { printf 'X-Api-Key: '; cat; echo; } |
+      curl -sS --cacert "$CA_DIR/ca.crt" -H @- -o /dev/null -w '%{http_code}' "$api/v1/team/self")"
+  fi
+  if [ "$code" != 200 ]; then
+    log "creating the dt-bridge API key into OpenBao secret/platform/dependency-track-api-key"
+    code="$(dt_admin PUT "/v1/team/$team/key")"
+    [ "$code" = 201 ] || die "cannot create the dt-bridge API key (HTTP $code)"
+    jq '{"api-key": .key}' "$WORK/dt-body.json" |
+      bao_root 'bao kv put -mount=secret platform/dependency-track-api-key - >/dev/null'
+    rm -f "$WORK/dt-body.json"
+    kubectl -n dt-bridge annotate externalsecret dependency-track-api-key --overwrite \
+      "force-sync=$(date +%s)" >/dev/null 2>&1 || true
+  fi
+
+  # OSV only (Debian 13, PyPI, Maven, GitHub advisories through OSV aliases): no NVD mirror.
+  code="$(dt_admin PUT /v2/extension-points/vuln-data-source/extensions/nvd/config \
+    -H 'Content-Type: application/json' --data '{"config": {"enabled": false}}')"
+  case "$code" in 204 | 304) ;; *) die "cannot disable the NVD data source (HTTP $code)" ;; esac
+  code="$(dt_admin PUT /v2/extension-points/vuln-data-source/extensions/osv/config \
+    -H 'Content-Type: application/json' --data "$(jq -n --argjson e "$DT_OSV_ECOSYSTEMS" '{config: {enabled: true,
+      aliasSyncEnabled: true, incrementalMirroringEnabled: true,
+      dataUrl: "https://storage.googleapis.com/osv-vulnerabilities", ecosystems: $e}}')")"
+  case "$code" in
+    204)
+      code="$(dt_admin POST /v2/vuln-data-sources/osv/mirror-runs)"
+      case "$code" in 202 | 400 | 409) ;; *) die "cannot start the OSV mirror (HTTP $code)" ;; esac
+      ;;
+    304) ;;
+    *) die "cannot configure the OSV data source (HTTP $code)" ;;
+  esac
+  rm -f "$WORK/dt-auth" "$WORK/dt-body.json"
+}
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 chmod 700 "$WORK"
@@ -370,6 +468,7 @@ ensure_root_application
 ensure_openbao
 seed_credentials
 wait_for_convergence "$WORKLOAD_APPLICATIONS"
+ensure_dependency_track
 "$REPO_ROOT/scripts/harbor-tofu.sh" configure
 replicate_governed_projects
 wait_for_convergence

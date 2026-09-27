@@ -1,0 +1,71 @@
+# Dependency-Track 5.1 (Decision 14) with its database on CloudNativePG (Decision 12). The database
+# credentials come from OpenBao through External Secrets; secret management reads DT_SECRET_* variables
+# only, so no key encryption key exists. `task up` rotates the admin password and creates the dt-bridge
+# API key, both kept in OpenBao.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dependency-track
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dependency-track
+  sources:
+    - repoURL: https://dependencytrack.github.io/helm-charts
+      chart: dependency-track
+      targetRevision: 2.5.0
+      helm:
+        valuesObject:
+          database:
+            jdbcUrl: jdbc:postgresql://dependency-track-db-rw:5432/dtrack?reWriteBatchedInserts=true&sslmode=require
+            existingSecret:
+              name: dependency-track-db-credentials
+          secretManagement:
+            provider: env
+          fileStorage:
+            local:
+              size: 2Gi
+          apiServer:
+            topology: monolith
+            extraEnv:
+              # Heap capped at 60% of the container limit (the image default is 80%).
+              - name: JAVA_OPTIONS
+                value: -XX:+UseG1GC -XX:+UseStringDeduplication -XX:+UseCompactObjectHeaders -XX:MaxGCPauseMillis=250 -XX:MaxRAMPercentage=60.0
+            web:
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 1536Mi
+                limits:
+                  memory: 2Gi
+          frontend:
+            enabled: true
+            resources:
+              requests:
+                cpu: 20m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+          httpRoute:
+            enabled: true
+            hostnames:
+              - dependency-track.127.0.0.1.nip.io
+            parentRefs:
+              - group: gateway.networking.k8s.io
+                kind: Gateway
+                name: platform
+                namespace: gateway
+                sectionName: https
+    - repoURL: {{ .Values.repoURL }}
+      targetRevision: {{ .Values.revision }}
+      path: platform/dependency-track
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true

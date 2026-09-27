@@ -1,0 +1,21 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: dependency-track-db
+  namespace: dependency-track
+spec:
+  instances: 1
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  bootstrap:
+    initdb:
+      database: dtrack
+      owner: dtrack
+      secret:
+        name: dependency-track-db-credentials

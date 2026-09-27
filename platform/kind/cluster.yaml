@@ -30,11 +30,6 @@ nodes:
               value: "-"
             - name: audit-policy-file
               value: /etc/kubernetes/policies/audit-policy.yaml
-          # Collects garbage at 50% heap growth (Go default 100%): the API server of this CRD-heavy
-          # cluster otherwise holds about twice its live heap, a large share of the 10 GiB budget.
-          extraEnvs:
-            - name: GOGC
-              value: "50"
           extraVolumes:
             - name: audit-policies
               hostPath: /etc/kubernetes/policies

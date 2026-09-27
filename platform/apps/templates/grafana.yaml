@@ -33,9 +33,6 @@ spec:
             analytics:
               check_for_updates: false
               reporting_enabled: false
-            # The dashboard alerts on nothing: no alerting engine.
-            unified_alerting:
-              enabled: false
           datasources:
             datasources.yaml:
               apiVersion: 1
@@ -67,17 +64,13 @@ spec:
                     path: /var/lib/grafana/dashboards/harborlab
           dashboardsConfigMaps:
             harborlab: grafana-dashboard-image-posture
-          # GOMEMLIMIT at 50% of the limit (chart default 90%) keeps the heap near its live size; the limit
-          # leaves room for the start-up peak and the VictoriaLogs plugin process.
-          goMemLimit:
-            enabled: true
-            factor: 0.5
+          # Grafana 13 settles near 250 Mi; below its GOMEMLIMIT (90% of the limit) its start-up spins in GC.
           resources:
             requests:
               cpu: 50m
               memory: 256Mi
             limits:
-              memory: 384Mi
+              memory: 448Mi
           # Start-up (plugin install, storage migrations) exceeds the default 60 s liveness delay.
           startupProbe:
             httpGet:

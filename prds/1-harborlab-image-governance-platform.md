@@ -44,7 +44,7 @@
 
 ## State
 phase: 2
-milestone: 6/10
+milestone: 7/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
@@ -72,6 +72,7 @@ findings:
 - T5 fixed a028864 — fresh task up (M5 code): Kyverno admission/reports pods blocked ~12 min on FailedMount of ConfigMap kyverno-harborlab-ca (trust-manager Bundle target created late); bootstrap ordering between trust-manager Bundle and Kyverno (workloads now synced after Kyverno policies are ready; Kyverno still waits ~2.5 min on the CA ConfigMap)
 - T6 pending — dt-bridge reads the CycloneDX attestation and SLSA provenance from Harbor referrers without verifying their Sigstore signatures (SBOM/base integrity trusted blindly)
 - T7 pending — local CA generated without keyUsage; dt-bridge relaxes Python VERIFY_X509_STRICT for the Harbor client (workaround) instead of ensure_ca emitting a compliant CA
+- T8 pending — Argo CD Application dependency-track has no resources-finalizer (pruning leaves DT workloads orphaned) and, like hello-java earlier, can sit without operationState so task up's convergence wait never completes until a manual sync
 demo:
 
 ## Milestones
@@ -82,7 +83,7 @@ demo:
 - [x] M3 — Image factory: `images/catalog.yaml` + generators, golden Python/Java on DHI, reusable `build-image.yml` (SBOM CDX+SPDX, SLSA, keyless cosign, Trivy `--vex oci`), platform CI hygiene and lint, Renovate (dépend de M2)
 - [x] M4 — Admission: Kyverno CEL policies per trust tier fed by the catalog, PSA restricted, digest mutation, `kyverno test` + Chainsaw E2E in GitHub Actions (dépend de M3)
 - [x] M5 — Golden-path apps: `dt-bridge` skeleton and `hello-java` built through the reusable workflow and deployed by ArgoCD in a workload namespace (dépend de M4)
-- [ ] M6 — Vulnerability management: Dependency-Track 5.1 on CNPG, Harbor webhook → `dt-bridge` → DT SBOM upload, DHI OpenVEX → CycloneDX VEX conversion, pytest coverage (dépend de M5)
+- [x] M6 — Vulnerability management: Dependency-Track 5.1 on CNPG, Harbor webhook → `dt-bridge` → DT SBOM upload, DHI OpenVEX → CycloneDX VEX conversion, pytest coverage (dépend de M5)
 - [ ] M7 — Runtime: Kubescape operator (scan, CIS, runtime threat detection, VEX generation) with runtime OpenVEX forwarded to DT (dépend de M6)
 - [ ] M8 — Observability: VictoriaMetrics, VictoriaLogs, Grafana image-posture dashboard, Policy Reporter UI, memory budget verified (dépend de M7)
 - [ ] M9 — Docs & demo: README, ARCHITECTURE, ADRs, THREAT-MODEL, DEMO runbook, ROADMAP (air-gap bundle, Gatekeeper/Rego comparison, Buildah builds, chart relocation as OCI), all `task demo:*` scenarios green (dépend de M8)

@@ -86,9 +86,10 @@ class DependencyTrackClient:
         response = self._expect(self._request("PUT", "/api/v1/vex", json=body), 200)
         return response.json().get("token") if response.content else None
 
-    def is_processing(self, token: str) -> bool:
+    def token_status(self, token: str) -> str | None:
+        """PENDING, RUNNING, COMPLETED or FAILED; None while no processing is associated with the token."""
         response = self._expect(self._request("GET", f"/api/v1/event/token/{token}"), 200)
-        return bool(response.json().get("processing"))
+        return response.json().get("status")
 
     def project_uuid(self, project_name: str, project_version: str) -> str | None:
         response = self._request(

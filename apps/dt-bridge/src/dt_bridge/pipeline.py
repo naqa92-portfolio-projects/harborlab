@@ -31,6 +31,7 @@ DHI_REGISTRY = "dhi.io"
 ANALYSIS_TIMEOUT_SECONDS = 900
 FINDINGS_TIMEOUT_SECONDS = 120
 POLL_SECONDS = 5
+TERMINAL_TOKEN_STATUSES = {"COMPLETED", "FAILED"}
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,13 @@ def purl_key(purl: str) -> str:
     )
 
 
+@dataclass(frozen=True)
+class PendingVex:
+    image: ImageRef
+    token: str
+    vex: dict
+
+
 class Bridge:
     def __init__(self, harbor: Registry, dt: DependencyTrackClient, dhi: Registry | None) -> None:
         self.harbor = harbor
@@ -76,19 +84,20 @@ class Bridge:
         _, manifest = self.harbor.manifest(image.path, latest["digest"])
         return self.harbor.blob(image.path, manifest["layers"][0]["digest"])
 
-    def process(self, image: ImageRef) -> None:
+    def process(self, image: ImageRef) -> "PendingVex | None":
+        """Uploads the attested SBOM; returns the DHI VEX to apply once Dependency-Track has analysed it."""
         digest, manifest = self.harbor.manifest(image.path, image.tag)
         is_index = manifest.get("mediaType") in INDEX_MEDIA_TYPES or "manifests" in manifest
         config_type = (manifest.get("config") or {}).get("mediaType")
         if not is_index and (manifest.get("artifactType") or config_type not in IMAGE_CONFIG_MEDIA_TYPES):
             log.info("not an image, skipped", extra={"image": image.path, "tag": image.tag, "digest": digest})
-            return
+            return None
 
         attestations = self._attestations(image, digest)
         cyclonedx = [r for t, refs in attestations.items() if is_cyclonedx_predicate_type(t) for r in refs]
         if not cyclonedx:
             log.warning("no CycloneDX attestation, skipped", extra={"image": image.path, "tag": image.tag})
-            return
+            return None
         sbom = extract_cyclonedx_sbom(self._bundle(image, cyclonedx))
         token = self.dt.upload_bom(image.path, image.tag, sbom)
         log.info(
@@ -103,13 +112,16 @@ class Bridge:
 
         base = self._dhi_base(image, attestations.get(SLSA_PREDICATE_TYPE, []))
         if base is None or self.dhi is None:
-            return
+            return None
         document = self._dhi_openvex(self.dhi, image, manifest, *base)
         if document is None:
-            return
-        vex = openvex_to_cyclonedx(document, sbom)
-        self._wait_for_analysis(token)
-        vex = self._on_dependency_track_findings(image, vex)
+            return None
+        return PendingVex(image, token, openvex_to_cyclonedx(document, sbom))
+
+    def apply_vex(self, pending: "PendingVex") -> None:
+        image = pending.image
+        self._wait_for_analysis(pending.token)
+        vex = self._on_dependency_track_findings(image, pending.vex)
         if not vex["vulnerabilities"]:
             log.info("no DHI VEX statement matches a finding", extra={"image": image.path, "tag": image.tag})
             return
@@ -191,10 +203,11 @@ class Bridge:
         return best[1]
 
     def _wait_for_analysis(self, token: str) -> None:
+        """VEX only applies to existing findings: waits for the BOM processing, analysis included."""
         deadline = time.monotonic() + ANALYSIS_TIMEOUT_SECONDS
-        while self.dt.is_processing(token):
+        while (status := self.dt.token_status(token)) not in TERMINAL_TOKEN_STATUSES:
             if time.monotonic() > deadline:
-                raise TimeoutError(f"Dependency-Track still processing BOM token {token}")
+                raise TimeoutError(f"Dependency-Track BOM token {token} still {status} after the timeout")
             time.sleep(POLL_SECONDS)
 
     def _on_dependency_track_findings(self, image: ImageRef, vex: dict) -> dict:
@@ -260,4 +273,4 @@ def images_of_event(event: dict, governed_projects: set[str]) -> list[ImageRef]:
     ]
 
 
-__all__ = ["Bridge", "ImageRef", "RegistryError", "images_of_event"]
+__all__ = ["Bridge", "ImageRef", "PendingVex", "RegistryError", "images_of_event"]

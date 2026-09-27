@@ -9,7 +9,7 @@ import certifi
 from fastapi import FastAPI, Request, Response
 
 from dt_bridge.dt_client import DependencyTrackClient, DependencyTrackError
-from dt_bridge.pipeline import Bridge, ImageRef, images_of_event
+from dt_bridge.pipeline import Bridge, ImageRef, PendingVex, images_of_event
 from dt_bridge.registry import Registry, RegistryError
 from dt_bridge.sbom import AttestationError
 from dt_bridge.vex import VexConversionError
@@ -33,6 +33,7 @@ logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 log = logging.getLogger("dt_bridge")
 
 jobs: queue.Queue[ImageRef] = queue.Queue(maxsize=MAX_QUEUED_IMAGES)
+vex_jobs: queue.Queue[PendingVex] = queue.Queue()
 pending: set[ImageRef] = set()
 pending_lock = threading.Lock()
 
@@ -61,34 +62,56 @@ def build_bridge() -> Bridge:
     return Bridge(harbor, dt, dhi)
 
 
-def worker(bridge: Bridge) -> None:
+FORWARDING_ERRORS = (
+    AttestationError,
+    DependencyTrackError,
+    RegistryError,
+    VexConversionError,
+    TimeoutError,
+    KeyError,
+    ValueError,
+)
+
+
+def sbom_worker(bridge: Bridge) -> None:
+    """Uploads SBOMs in arrival order; VEX documents wait for DT's analysis in the other worker."""
     while True:
         image = jobs.get()
         with pending_lock:
             pending.discard(image)
         try:
-            bridge.process(image)
-        except (
-            AttestationError,
-            DependencyTrackError,
-            RegistryError,
-            VexConversionError,
-            TimeoutError,
-            KeyError,
-            ValueError,
-        ) as error:
+            vex = bridge.process(image)
+            if vex is not None:
+                vex_jobs.put(vex)
+        except FORWARDING_ERRORS as error:
             log.error(
                 "image not forwarded",
                 extra={"image": image.path, "tag": image.tag, "error": f"{type(error).__name__}: {error}"},
             )
-        finally:
-            jobs.task_done()
+
+
+def vex_worker(bridge: Bridge) -> None:
+    while True:
+        vex = vex_jobs.get()
+        try:
+            bridge.apply_vex(vex)
+        except FORWARDING_ERRORS as error:
+            log.error(
+                "VEX not applied",
+                extra={
+                    "image": vex.image.path,
+                    "tag": vex.image.tag,
+                    "error": f"{type(error).__name__}: {error}",
+                },
+            )
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     app.state.governed_projects = set(os.environ.get("GOVERNED_PROJECTS", "golden,apps").split(","))
-    threading.Thread(target=worker, args=(build_bridge(),), daemon=True, name="dt-bridge-worker").start()
+    bridge = build_bridge()
+    threading.Thread(target=sbom_worker, args=(bridge,), daemon=True, name="sbom-worker").start()
+    threading.Thread(target=vex_worker, args=(bridge,), daemon=True, name="vex-worker").start()
     yield
 
 

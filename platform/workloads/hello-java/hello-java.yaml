@@ -1,11 +1,13 @@
-# hello-java in a workload namespace: Kyverno admits its Harbor image and labels the namespace Pod
-# Security restricted; trust-manager writes the local CA (ConfigMap harborlab-trust) into it.
+# hello-java in a workload namespace under Pod Security restricted: Kyverno admits its Harbor image;
+# trust-manager writes the local CA (ConfigMap harborlab-trust) into it.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: hello-java
   labels:
     harborlab.io/tier: workload
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
 ---
 apiVersion: v1
 kind: ServiceAccount

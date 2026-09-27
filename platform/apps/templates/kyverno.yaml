@@ -5,6 +5,7 @@ metadata:
   name: kyverno
   namespace: argocd
   annotations:
+    argocd.argoproj.io/sync-wave: "2"
     argocd.argoproj.io/compare-options: ServerSideDiff=true,IncludeMutationWebhook=true
 spec:
   project: default

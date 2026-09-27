@@ -2,6 +2,9 @@
 repoURL: https://github.com/naqa92-portfolio-projects/harborlab.git
 revision: main
 
+# `root` syncs its Applications by sync wave, each wave once the previous one is Healthy:
+# 0 operators and OpenBao, 1 trust-manager and platform-config (local CA), 2 Kyverno and Harbor,
+# 3 Kyverno policies, 4 workloads, so no workload object exists before admission does.
 syncPolicy:
   automated:
     prune: true

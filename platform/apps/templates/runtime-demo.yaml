@@ -14,5 +14,11 @@ spec:
     repoURL: {{ .Values.repoURL }}
     targetRevision: {{ .Values.revision }}
     path: platform/workloads/runtime-demo
+  # Kubescape storage lists ContainerProfiles without their spec (only resourceVersion=fullSpec has it).
+  ignoreDifferences:
+    - group: spdx.softwarecomposition.kubescape.io
+      kind: ContainerProfile
+      jsonPointers:
+        - /spec
   syncPolicy:
     {{- toYaml .Values.syncPolicy | nindent 4 }}

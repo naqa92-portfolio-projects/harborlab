@@ -63,3 +63,16 @@ GCP KMS, Azure Key Vault and HashiCorp Vault / OpenBao Transit through `--key <k
 a private Sigstore deployment (Fulcio and Rekor operated in-house). Admission then verifies against the
 public key or the private trusted root instead of the public-good instance; the policies only change
 their attestor definition.
+
+## Known findings
+
+Accepted or pending risks found while building the platform, with the control that would close them.
+
+| Finding | Risk | Mitigation |
+|---|---|---|
+| Keyless signing on the public Rekor instead of a KMS | Signing and admission depend on public Sigstore services; signing metadata is public | Documented above; a bank signs with a KMS/HSM key (`cosign --key <kms-uri>`) or a private Sigstore, and only the policies' attestor changes |
+| The workload signing identity accepts `prd-*` branches | `build-image.yml@refs/heads/(main\|prd-.+)`: any `prd-*` branch of this repository can sign admissible images, so pre-merge code reaches production admission | Production trusts `refs/heads/main` only; `prd-*` stays a development convenience |
+| Branch protection is a human setting | With the identity above, the chain of trust is only as strong as who can push to `main` or create `prd-*` branches; no ruleset is declared in this repository | A repository administrator adds a ruleset protecting `main` (reviews, status checks) and restricting the creation of `prd-*` branches |
+| `dt-bridge` trusts Harbor referrers for the SBOM it uploads | The CycloneDX attestation and SLSA provenance read from Harbor feed Dependency-Track and the DHI VEX lookup; a tampered referrer would mislead triage (not admission, which verifies signatures itself) | Verify the Sigstore bundles in `dt-bridge` against the build identity before use |
+| The local CA has no `keyUsage` extension | Strict X.509 clients reject it; `dt-bridge` relaxes Python's strict verification for Harbor | Emit a compliant CA certificate in `task up` and drop the relaxation |
+| OpenTofu does not see every out-of-band Harbor change | A replication filter edited in the Harbor UI stays unnoticed by `task harbor:plan` | Treat the Harbor UI as read-only; `tofu apply -replace` restores the declared rule |

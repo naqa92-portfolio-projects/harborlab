@@ -3,6 +3,10 @@ version: '3'
 # Local secrets (DHI_TOKEN) come from the git-ignored .env when present; CI sets them in the environment.
 dotenv: ['.env']
 
+vars:
+  # Namespace of the admission demos (task demo:<scenario> NAMESPACE=<ns>): a platform workload namespace.
+  NAMESPACE: runtime-demo
+
 tasks:
   up:
     desc: Create or converge the kind platform; returns once every Argo CD Application is stable
@@ -50,7 +54,47 @@ tasks:
     cmds:
       - ./scripts/lint.sh {{.CLI_ARGS}}
 
+  demo:unsigned:
+    desc: 'Submit a pod on an unsigned Harbor image; workload-image-signature denies it (NAMESPACE=<ns>)'
+    cmds:
+      - ./scripts/demo-admission.sh unsigned '{{.NAMESPACE}}'
+
+  demo:foreign-signer:
+    desc: 'Submit a pod on a Harbor image signed by another identity; workload-image-signature denies it'
+    cmds:
+      - ./scripts/demo-admission.sh foreign-signer '{{.NAMESPACE}}'
+
+  demo:non-golden-base:
+    desc: 'Submit a pod on an image built on a base outside the catalog; workload-golden-base denies it'
+    cmds:
+      - ./scripts/demo-admission.sh non-golden-base '{{.NAMESPACE}}'
+
+  demo:deprecated-base:
+    desc: 'Submit a pod on an image built on a deprecated golden image; admitted with a warning'
+    cmds:
+      - ./scripts/demo-admission.sh deprecated-base '{{.NAMESPACE}}'
+
+  demo:eol-base:
+    desc: 'Submit a pod on an image built on an end-of-life golden image; workload-golden-base denies it'
+    cmds:
+      - ./scripts/demo-admission.sh eol-base '{{.NAMESPACE}}'
+
+  demo:direct-dockerhub:
+    desc: 'Submit a pod on a Docker Hub image; workload-registry denies it'
+    cmds:
+      - ./scripts/demo-admission.sh direct-dockerhub '{{.NAMESPACE}}'
+
+  demo:root:
+    desc: 'Submit a pod running as root; Pod Security restricted denies it'
+    cmds:
+      - ./scripts/demo-admission.sh root '{{.NAMESPACE}}'
+
   demo:runtime-shell:
     desc: Run a shell in the runtime-demo workload container; Kubescape alerts on it (VictoriaLogs, Grafana)
     cmds:
       - ./scripts/demo-runtime-shell.sh
+
+  demo:vex:
+    desc: Replay the Harbor event of a golden image; dt-bridge uploads its DHI VEX, Dependency-Track completes it
+    cmds:
+      - ./scripts/demo-vex.sh

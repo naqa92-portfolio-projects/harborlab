@@ -25,6 +25,10 @@ locals {
   # The runtime-detection demo target lands in `apps` through its own policy, apart from the applications.
   runtime_demo_filter = "naqa92-portfolio-projects/harborlab/apps/runtime-demo"
 
+  # Non-compliant admission fixtures the `task demo:*` scenarios submit from Harbor `apps`, where only
+  # admission can reject them (flattened: fixtures/unsigned lands as apps/unsigned).
+  demo_fixtures_filter = "naqa92-portfolio-projects/harborlab/fixtures/{unsigned,foreign-signer,unknown-base}"
+
   # Harbor cron expressions carry a leading seconds field.
   replication_cron = "0 */15 * * * *"
   retention_cron   = "0 0 3 * * *"
@@ -114,6 +118,23 @@ resource "harbor_replication" "runtime_demo" {
 
   filters {
     name = local.runtime_demo_filter
+  }
+}
+
+resource "harbor_replication" "demo_fixtures" {
+  name                   = "apps-demo-fixtures-from-ghcr"
+  description            = "Pull ${local.demo_fixtures_filter} from GHCR into Harbor project apps"
+  action                 = "pull"
+  registry_id            = harbor_registry.proxy["ghcr"].registry_id
+  dest_namespace         = harbor_project.governed["apps"].name
+  dest_namespace_replace = -1
+  schedule               = local.replication_cron
+  override               = true
+  enabled                = true
+  deletion               = false
+
+  filters {
+    name = local.demo_fixtures_filter
   }
 }
 

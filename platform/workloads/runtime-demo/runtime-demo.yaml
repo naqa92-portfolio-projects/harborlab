@@ -32,9 +32,9 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: runtime-demo
-        # Kubescape closes the container's application profile after this long (default 24h): a shell run
-        # afterwards is never learnt, so each run is unexpected.
-        kubescape.io/max-sniffing-time: 3m
+        # node-agent enforces the authored ContainerProfile runtime-demo (containerprofile.yaml) instead of
+        # learning one, so any shell run in the container is unexpected.
+        kubescape.io/user-defined-profile: runtime-demo
     spec:
       serviceAccountName: runtime-demo
       automountServiceAccountToken: false

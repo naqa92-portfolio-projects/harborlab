@@ -33,6 +33,9 @@ spec:
             analytics:
               check_for_updates: false
               reporting_enabled: false
+            # The dashboard alerts on nothing: no alerting engine.
+            unified_alerting:
+              enabled: false
           datasources:
             datasources.yaml:
               apiVersion: 1
@@ -64,7 +67,11 @@ spec:
                     path: /var/lib/grafana/dashboards/harborlab
           dashboardsConfigMaps:
             harborlab: grafana-dashboard-image-posture
-          # Grafana 13 settles near 250 Mi; below its GOMEMLIMIT (90% of the limit) its start-up spins in GC.
+          # Grafana 13's start-up heap nears 230 Mi: a lower GC target keeps it spinning in GC. Past start-up,
+          # GOMEMLIMIT (55% of the limit) holds its steady heap down.
+          goMemLimit:
+            enabled: true
+            factor: 0.55
           resources:
             requests:
               cpu: 50m

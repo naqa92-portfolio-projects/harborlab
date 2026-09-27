@@ -140,6 +140,58 @@ class Bridge:
             },
         )
 
+    def image_of_digest(self, project: str, repository: str, digest: str) -> ImageRef | None:
+        """The image tag Harbor holds for a digest: the version of its Dependency-Track project."""
+        path = f"{project}/{repository}"
+        for tag in self.harbor.tags(path):
+            if is_image_tag(tag) and self.harbor.manifest(path, tag)[0] == digest:
+                return ImageRef(project, repository, tag)
+        return None
+
+    def forward_kubescape(
+        self, image: ImageRef, digest: str, name: str, version: object, document: dict
+    ) -> None:
+        """Uploads the Kubescape runtime VEX of a running image on the components of its attested SBOM."""
+        extra = {
+            "image": image.path,
+            "tag": image.tag,
+            "digest": digest,
+            "kubescape": name,
+            "kubescape_version": version,
+        }
+        cyclonedx = [
+            r
+            for t, refs in self._attestations(image, digest).items()
+            if is_cyclonedx_predicate_type(t)
+            for r in refs
+        ]
+        if not cyclonedx:
+            log.warning("no CycloneDX attestation, Kubescape VEX skipped", extra=extra)
+            return
+        sbom = extract_cyclonedx_sbom(self._bundle(image, cyclonedx))
+        if self.dt.project_uuid(image.path, image.tag) is None:
+            token = self.dt.upload_bom(image.path, image.tag, sbom)
+            log.info(
+                "SBOM uploaded",
+                extra={**extra, "token": token, "components": len(sbom.get("components", []))},
+            )
+            self._wait_for_analysis(token)
+        vex = openvex_to_cyclonedx(document, sbom)
+        if not vex["vulnerabilities"]:
+            log.info("no Kubescape VEX statement covers an SBOM component", extra=extra)
+            return
+        vex = self._on_dependency_track_findings(image, vex)
+        answer = self.dt.upload_vex(image.path, image.tag, vex)
+        log.info(
+            "Kubescape VEX uploaded",
+            extra={
+                **extra,
+                "token": answer.get("token"),
+                "project_uuid": answer.get("projectUuid"),
+                "vex": vex,
+            },
+        )
+
     def _dhi_base(self, image: ImageRef, provenances: list[dict]) -> tuple[str, str] | None:
         if not provenances:
             return None

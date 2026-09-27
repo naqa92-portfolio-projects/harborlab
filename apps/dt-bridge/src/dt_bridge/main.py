@@ -3,12 +3,15 @@ import logging
 import os
 import queue
 import threading
+import time
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 import certifi
 from fastapi import FastAPI, Request, Response
 
 from dt_bridge.dt_client import DependencyTrackClient, DependencyTrackError
+from dt_bridge.kubescape import IMAGE_ID_ANNOTATION, KubescapeError, VexDocuments, image_reference
 from dt_bridge.pipeline import Bridge, ImageRef, PendingVex, images_of_event
 from dt_bridge.registry import Registry, RegistryError
 from dt_bridge.sbom import AttestationError
@@ -16,7 +19,21 @@ from dt_bridge.vex import VexConversionError
 
 # Bounds the work a burst of (possibly forged) webhook calls can queue; every job re-reads Harbor.
 MAX_QUEUED_IMAGES = 200
-LOG_FIELDS = ("image", "tag", "digest", "token", "project_uuid", "components", "vex", "dhi", "error")
+LOG_FIELDS = (
+    "image",
+    "tag",
+    "digest",
+    "token",
+    "project_uuid",
+    "components",
+    "vex",
+    "dhi",
+    "kubescape",
+    "kubescape_version",
+    "error",
+)
+KUBERNETES_API_URL = "https://kubernetes.default.svc"
+KUBESCAPE_POLL_SECONDS = 30
 
 
 class JsonFormatter(logging.Formatter):
@@ -106,12 +123,71 @@ def vex_worker(bridge: Bridge) -> None:
             )
 
 
+def forward_kubescape_document(bridge: Bridge, item: dict, harbor_host: str, governed: set[str]) -> None:
+    metadata = item["metadata"]
+    name = f"{metadata['namespace']}/{metadata['name']}"
+    version = item["spec"].get("version")
+    reference = image_reference((metadata.get("annotations") or {}).get(IMAGE_ID_ANNOTATION, ""))
+    project, _, repository = reference.repository.partition("/")
+    if reference.registry != harbor_host or project not in governed or not repository or not reference.digest:
+        log.debug("Kubescape VEX of a non-governed image, skipped", extra={"kubescape": name})
+        return
+    image = bridge.image_of_digest(project, repository, reference.digest)
+    if image is None:
+        raise ValueError(f"Harbor holds no image tag for {reference.repository}@{reference.digest}")
+    bridge.forward_kubescape(image, reference.digest, name, version, item["spec"])
+
+
+def kubescape_worker(bridge: Bridge, documents: VexDocuments, harbor_host: str, governed: set[str]) -> None:
+    """Forwards each container-instance VEX document again whenever its `spec.version` changes."""
+    forwarded: dict[str, object] = {}
+    while True:
+        try:
+            items = documents.instance_documents()
+        except KubescapeError as error:
+            log.error(
+                "Kubescape VEX documents not listed", extra={"error": f"{type(error).__name__}: {error}"}
+            )
+            items = []
+        for item in items:
+            key = item["metadata"]["name"]
+            version = item["spec"].get("version")
+            if forwarded.get(key) == version:
+                continue
+            try:
+                forward_kubescape_document(bridge, item, harbor_host, governed)
+                forwarded[key] = version
+            except FORWARDING_ERRORS as error:
+                log.error(
+                    "Kubescape VEX not applied",
+                    extra={
+                        "kubescape": f"{item['metadata'].get('namespace')}/{key}",
+                        "kubescape_version": version,
+                        "error": f"{type(error).__name__}: {error}",
+                    },
+                )
+        time.sleep(KUBESCAPE_POLL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     app.state.governed_projects = set(os.environ.get("GOVERNED_PROJECTS", "golden,apps").split(","))
     bridge = build_bridge()
     threading.Thread(target=sbom_worker, args=(bridge,), daemon=True, name="sbom-worker").start()
     threading.Thread(target=vex_worker, args=(bridge,), daemon=True, name="vex-worker").start()
+    kubescape_namespace = os.environ.get("KUBESCAPE_NAMESPACE")
+    if kubescape_namespace:
+        threading.Thread(
+            target=kubescape_worker,
+            args=(
+                build_bridge(),
+                VexDocuments(kubescape_namespace, KUBERNETES_API_URL),
+                urlparse(required_env("HARBOR_URL")).netloc,
+                app.state.governed_projects,
+            ),
+            daemon=True,
+            name="kubescape-worker",
+        ).start()
     yield
 
 

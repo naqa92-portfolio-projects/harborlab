@@ -101,5 +101,8 @@ class Registry:
         )
         return response.json().get("manifests", [])
 
+    def tags(self, repository: str) -> list[str]:
+        return self._get(repository, "tags/list").json().get("tags") or []
+
     def blob(self, repository: str, digest: str) -> bytes:
         return self._get(repository, f"blobs/{digest}").content

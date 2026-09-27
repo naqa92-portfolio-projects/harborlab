@@ -16,6 +16,31 @@ metadata:
   namespace: dt-bridge
 automountServiceAccountToken: false
 ---
+# Read-only access to the Kubescape runtime VEX documents, nothing else of Kubescape.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dt-bridge-vex-reader
+  namespace: kubescape
+rules:
+  - apiGroups: [spdx.softwarecomposition.kubescape.io]
+    resources: [openvulnerabilityexchangecontainers]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dt-bridge-vex-reader
+  namespace: kubescape
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dt-bridge-vex-reader
+subjects:
+  - kind: ServiceAccount
+    name: dt-bridge
+    namespace: dt-bridge
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -59,6 +84,8 @@ spec:
               value: http://dependency-track-api-server.dependency-track.svc.cluster.local:8080
             - name: GOVERNED_PROJECTS
               value: golden,apps
+            - name: KUBESCAPE_NAMESPACE
+              value: kubescape
             - name: HARBOR_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -109,12 +136,27 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
       volumes:
         - name: harborlab-trust
           configMap:
             name: harborlab-trust
         - name: tmp
           emptyDir: {}
+        # The ServiceAccount token, mounted in this container only.
+        - name: kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
 ---
 apiVersion: v1
 kind: Service

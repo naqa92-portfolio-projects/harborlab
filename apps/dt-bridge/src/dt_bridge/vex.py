@@ -4,7 +4,9 @@ Dependency-Track imports OpenVEX (DependencyTrack/dependency-track#7094).
 Debian products name source packages while the SBOM lists binary packages carrying an `upstream`
 qualifier: a product covers an SBOM component of the same type and namespace whose name or upstream
 source is the product name, at the product version when it has one. Only `not_affected` statements are
-emitted; the other known statuses carry no analysis Dependency-Track should apply.
+emitted; the other known statuses carry no analysis Dependency-Track should apply, but one that names a
+component's own package (same type, namespace, name and version) for the same vulnerability withholds the
+`not_affected` of that component: a binary package reported affected is not covered by its source package.
 """
 
 from collections.abc import Iterator
@@ -62,6 +64,22 @@ class Purl:
             and self.name in {component.name, component.upstream}
             and (self.version is None or self.version == component.version)
         )
+
+    def names(self, component: "Purl") -> bool:
+        return (
+            self.type == component.type
+            and self.namespace == component.namespace
+            and self.name == component.name
+            and (self.version is None or self.version == component.version)
+        )
+
+
+def _vulnerability_ids(statement: dict) -> set[str]:
+    vulnerability = statement["vulnerability"]
+    aliases = vulnerability.get("aliases")
+    return {vulnerability["name"]} | {
+        alias for alias in (aliases if isinstance(aliases, list) else []) if isinstance(alias, str) and alias
+    }
 
 
 def _sbom_components(components: object) -> Iterator[dict]:
@@ -140,24 +158,36 @@ def openvex_to_cyclonedx(document: dict, sbom: dict) -> dict:
             except ValueError:
                 continue
 
+    products_by_statement = [_product_purls(statement) for statement in statements]
+    contesting = [
+        (_vulnerability_ids(statement), products)
+        for statement, products in zip(statements, products_by_statement, strict=True)
+        if statement["status"] != "not_affected"
+    ]
+
     covered: dict[str, dict] = {}
     vulnerabilities = []
-    for statement in statements:
-        products = _product_purls(statement)
+    for statement, products in zip(statements, products_by_statement, strict=True):
         if statement["status"] != "not_affected":
             continue
+        ids = _vulnerability_ids(statement)
         refs = []
         for component, purl in candidates:
-            if component["bom-ref"] not in refs and any(product.covers(purl) for product in products):
-                refs.append(component["bom-ref"])
-                covered.setdefault(
-                    component["bom-ref"],
-                    {
-                        key: component[key]
-                        for key in ("bom-ref", "type", "group", "name", "version", "purl")
-                        if key in component
-                    },
-                )
+            if component["bom-ref"] in refs or not any(product.covers(purl) for product in products):
+                continue
+            if any(
+                ids & other_ids and any(p.names(purl) for p in others) for other_ids, others in contesting
+            ):
+                continue
+            refs.append(component["bom-ref"])
+            covered.setdefault(
+                component["bom-ref"],
+                {
+                    key: component[key]
+                    for key in ("bom-ref", "type", "group", "name", "version", "purl")
+                    if key in component
+                },
+            )
         if not refs:
             continue
         analysis = {"state": "not_affected", "detail": _detail(document.get("author"), statement)}

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Runs OpenTofu on tofu/harbor/ logged into OpenBao as `harbor-tofu`: configure | plan | tofu <args>.
+# Runs OpenTofu on tofu/harbor/ logged into OpenBao as `harbor-tofu`: configure | plan | tofu <args>;
+# `seed` only generates the missing robot secrets in OpenBao.
 # Only tofu writes to stdout; secrets travel through pipes and the environment, never argv.
 set -euo pipefail
 
@@ -24,13 +25,13 @@ die() {
 }
 
 usage() {
-  die "usage: $0 configure | plan | tofu <args>"
+  die "usage: $0 configure | plan | seed | tofu <args>"
 }
 
 [ "$#" -ge 1 ] || usage
 MODE="$1"
 shift
-case "$MODE" in configure | plan | tofu) ;; *) usage ;; esac
+case "$MODE" in configure | plan | seed | tofu) ;; *) usage ;; esac
 
 [ -s "$KUBECONFIG" ] || die "platform is not up: $KUBECONFIG missing (run task up)"
 [ -s "$LOCAL_CA" ] || die "$LOCAL_CA missing (run task up)"
@@ -116,6 +117,10 @@ run_tofu() {
 export TF_IN_AUTOMATION=1 TF_INPUT=0
 
 [ "$MODE" != configure ] || seed_robot_secrets
+if [ "$MODE" = seed ]; then
+  seed_robot_secrets
+  exit 0
+fi
 start_openbao_forward
 openbao_login
 trust_local_ca

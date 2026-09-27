@@ -467,7 +467,8 @@ ensure_argocd
 ensure_root_application
 ensure_openbao
 seed_credentials
-# Before the first convergence: dt-bridge, a child of root, cannot start without its DT API key.
+# Before the first convergence: dt-bridge, a child of root, needs its Harbor robot and DT API key Secrets.
+"$REPO_ROOT/scripts/harbor-tofu.sh" seed
 ensure_dependency_track
 wait_for_convergence "$WORKLOAD_APPLICATIONS"
 "$REPO_ROOT/scripts/harbor-tofu.sh" configure

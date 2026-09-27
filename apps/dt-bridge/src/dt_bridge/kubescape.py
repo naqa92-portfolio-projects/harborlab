@@ -15,6 +15,8 @@ DOCKER_HUB = "docker.io"
 DOCKER_HUB_ALIASES = {"docker.io", "index.docker.io", "registry-1.docker.io"}
 VEX_API = "/apis/spdx.softwarecomposition.kubescape.io/v1beta1"
 VEX_RESOURCE = "openvulnerabilityexchangecontainers"
+# Kubescape storage resource version asking a list for the full objects.
+FULL_SPEC = "fullSpec"
 INSTANCE_ID_ANNOTATION = "kubescape.io/instance-id"
 IMAGE_ID_ANNOTATION = "kubescape.io/image-id"
 SERVICE_ACCOUNT_DIR = Path("/var/run/secrets/kubernetes.io/serviceaccount")
@@ -94,26 +96,20 @@ class VexDocuments:
             base_url=api_url.rstrip("/"), timeout=TIMEOUT_SECONDS, transport=transport, verify=context
         )
 
-    def _get(self, path: str) -> dict:
-        url = f"{VEX_API}/namespaces/{self._namespace}/{VEX_RESOURCE}{path}"
-        # The kubelet rotates the projected token: it is re-read on every request.
-        headers = {"Authorization": f"Bearer {self._token_file.read_text().strip()}"}
+    def instance_documents(self) -> list[dict]:
+        """The documents of container instances, `spec` included (a plain list returns metadata only)."""
+        url = f"{VEX_API}/namespaces/{self._namespace}/{VEX_RESOURCE}"
         try:
-            response = self._client.get(url, headers=headers)
-        except httpx.HTTPError as error:
+            # The kubelet rotates the projected token: it is re-read on every request.
+            headers = {"Authorization": f"Bearer {self._token_file.read_text().strip()}"}
+            response = self._client.get(url, headers=headers, params={"resourceVersion": FULL_SPEC})
+        except (httpx.HTTPError, OSError) as error:
             raise KubescapeError(f"GET {url} failed: {type(error).__name__}") from None
         if response.status_code != 200:
             raise KubescapeError(f"GET {url} answered HTTP {response.status_code}")
-        return response.json()
-
-    def instance_documents(self) -> list[dict]:
-        """The documents of container instances, each with its `spec`."""
-        documents = []
-        for item in self._get("").get("items") or []:
-            metadata = item.get("metadata") or {}
-            if not (metadata.get("annotations") or {}).get(INSTANCE_ID_ANNOTATION):
-                continue
-            documents.append(
-                item if isinstance(item.get("spec"), dict) else self._get(f"/{metadata['name']}")
-            )
-        return documents
+        return [
+            item
+            for item in response.json().get("items") or []
+            if ((item.get("metadata") or {}).get("annotations") or {}).get(INSTANCE_ID_ANNOTATION)
+            and isinstance(item.get("spec"), dict)
+        ]

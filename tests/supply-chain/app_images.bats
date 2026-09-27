@@ -22,7 +22,7 @@ load apps
 
     # The scan step is the build-image.yml step running `trivy` with `--vex oci`, at the built commit.
     step="$(git -C "$REPO_ROOT" show "$APP_SHA:$BUILD_WORKFLOW_FILE" |
-      yq -o=json '[.jobs[].steps[]? | select((.run // "") | test("trivy") and test("--vex[= ]oci")) | .name] | .[0] // ""' |
+      yq -o=json '[.jobs[].steps[]? | select((.run // "") | (test("trivy") and test("--vex[= ]oci"))) | .name] | .[0] // ""' |
       jq -r .)"
     [ -n "$step" ] && [ "$step" != null ] ||
       fail "$BUILD_WORKFLOW_FILE at ${APP_SHA:0:12} has no named step running trivy with --vex oci"

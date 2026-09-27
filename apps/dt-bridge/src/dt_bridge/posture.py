@@ -210,8 +210,9 @@ class SigstoreVerdicts:
     and issuer, statement subject equal to the image digest."""
 
     def __init__(self, identities: Identities) -> None:
-        # Fetches the Sigstore trust root through TUF.
-        self._verifier = Verifier.production()
+        # The public-good trust root shipped with sigstore-python: its TUF client would use the process's
+        # default TLS trust, which holds only the local CA here (SSL_CERT_FILE).
+        self._verifier = Verifier.production(offline=True)
         self._policies = {
             project: AllOf([OIDCIssuerV2(identities.issuer), SanMatches(pattern)])
             for project, pattern in identities.by_project.items()

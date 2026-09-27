@@ -16,10 +16,16 @@ PLATFORM_CREDENTIALS=(
   "platform/harbor-admin|password|harbor/harbor-admin|HARBOR_ADMIN_PASSWORD"
   "platform/harbor-db|username|harbor/harbor-db-credentials|username"
   "platform/harbor-db|password|harbor/harbor-db-credentials|password"
-  "platform/harbor-robot-dt-bridge|username|-|-"
-  "platform/harbor-robot-dt-bridge|password|-|-"
+  "platform/harbor-robot-dt-bridge|username|dt-bridge/harbor-robot-dt-bridge|username"
+  "platform/harbor-robot-dt-bridge|password|dt-bridge/harbor-robot-dt-bridge|password"
   "platform/dhi|username|registry-mirror-test/dhi-pull|.dockerconfigjson"
   "platform/dhi|token|registry-mirror-test/dhi-pull|.dockerconfigjson"
+  "platform/dhi|username|dt-bridge/dhi-credentials|username"
+  "platform/dhi|token|dt-bridge/dhi-credentials|token"
+  "platform/dependency-track-db|username|dependency-track/dependency-track-db-credentials|username"
+  "platform/dependency-track-db|password|dependency-track/dependency-track-db-credentials|password"
+  "platform/dependency-track-admin|password|-|-"
+  "platform/dependency-track-api-key|api-key|dt-bridge/dependency-track-api-key|api-key"
 )
 
 fail() {

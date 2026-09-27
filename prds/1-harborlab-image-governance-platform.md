@@ -44,7 +44,7 @@
 
 ## State
 phase: 2
-milestone: 5/10
+milestone: 6/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
@@ -67,7 +67,7 @@ findings:
 - T2 pending — workload signature identity accepts build-image.yml@refs/heads/(main|prd-.+): any prd-* branch can sign admissible images; production should trust main only (review at phase 3)
 - T3 pending — public-repo audit 2026-09-27: no ruleset / branch protection on main and prd-*; with T2 the signing identity is only as strong as who can push those refs (human action: ruleset protecting main + restricting prd-* creation)
 - T4 pending — after docker stop/start of the kind node, platform does not reconverge: kyverno-reports-controller CrashLoop (leader lease lost, client rate limiter deadline, 64-128Mi limits) and Argo CD keeps harbor/platform-config Degraded with all children Healthy; rebuilt with task down && task up
-- T5 pending — fresh task up (M5 code): Kyverno admission/reports pods blocked ~12 min on FailedMount of ConfigMap kyverno-harborlab-ca (trust-manager Bundle target created late); bootstrap ordering between trust-manager Bundle and Kyverno
+- T5 fixed a028864 — fresh task up (M5 code): Kyverno admission/reports pods blocked ~12 min on FailedMount of ConfigMap kyverno-harborlab-ca (trust-manager Bundle target created late); bootstrap ordering between trust-manager Bundle and Kyverno (workloads now synced after Kyverno policies are ready; Kyverno still waits ~2.5 min on the CA ConfigMap)
 demo:
 
 ## Milestones
@@ -77,7 +77,7 @@ demo:
 - [x] M2 — Registry: Harbor on CNPG deployed by ArgoCD, `task harbor:configure` idempotent (proxy caches, `golden`/`apps` replication from GHCR, robots in OpenBao, immutability, retention, deployment security, webhooks) (dépend de M1)
 - [x] M3 — Image factory: `images/catalog.yaml` + generators, golden Python/Java on DHI, reusable `build-image.yml` (SBOM CDX+SPDX, SLSA, keyless cosign, Trivy `--vex oci`), platform CI hygiene and lint, Renovate (dépend de M2)
 - [x] M4 — Admission: Kyverno CEL policies per trust tier fed by the catalog, PSA restricted, digest mutation, `kyverno test` + Chainsaw E2E in GitHub Actions (dépend de M3)
-- [ ] M5 — Golden-path apps: `dt-bridge` skeleton and `hello-java` built through the reusable workflow and deployed by ArgoCD in a workload namespace (dépend de M4)
+- [x] M5 — Golden-path apps: `dt-bridge` skeleton and `hello-java` built through the reusable workflow and deployed by ArgoCD in a workload namespace (dépend de M4)
 - [ ] M6 — Vulnerability management: Dependency-Track 5.1 on CNPG, Harbor webhook → `dt-bridge` → DT SBOM upload, DHI OpenVEX → CycloneDX VEX conversion, pytest coverage (dépend de M5)
 - [ ] M7 — Runtime: Kubescape operator (scan, CIS, runtime threat detection, VEX generation) with runtime OpenVEX forwarded to DT (dépend de M6)
 - [ ] M8 — Observability: VictoriaMetrics, VictoriaLogs, Grafana image-posture dashboard, Policy Reporter UI, memory budget verified (dépend de M7)

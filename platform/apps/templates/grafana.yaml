@@ -67,8 +67,8 @@ spec:
                     path: /var/lib/grafana/dashboards/harborlab
           dashboardsConfigMaps:
             harborlab: grafana-dashboard-image-posture
-          # Grafana 13's start-up heap nears 230 Mi: a lower GC target keeps it spinning in GC. Past start-up,
-          # GOMEMLIMIT (55% of the limit) holds its steady heap down.
+          # GOMEMLIMIT at 55% of the limit (chart default 90%) keeps the heap near its live size; the limit
+          # leaves room for the start-up peak and the VictoriaLogs plugin process.
           goMemLimit:
             enabled: true
             factor: 0.55

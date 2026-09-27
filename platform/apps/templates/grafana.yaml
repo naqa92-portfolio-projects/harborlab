@@ -64,12 +64,20 @@ spec:
                     path: /var/lib/grafana/dashboards/harborlab
           dashboardsConfigMaps:
             harborlab: grafana-dashboard-image-posture
+          # Grafana 13 settles near 250 Mi; below its GOMEMLIMIT (90% of the limit) its start-up spins in GC.
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
-            limits:
               memory: 256Mi
+            limits:
+              memory: 448Mi
+          # Start-up (plugin install, storage migrations) exceeds the default 60 s liveness delay.
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: grafana
+            periodSeconds: 10
+            failureThreshold: 30
     - repoURL: {{ .Values.repoURL }}
       targetRevision: {{ .Values.revision }}
       path: platform/observability/grafana

@@ -41,6 +41,54 @@ subjects:
     name: dt-bridge
     namespace: dt-bridge
 ---
+# Image posture metrics: the running containers of every namespace, and the golden image catalog.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dt-bridge-pod-reader
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dt-bridge-pod-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dt-bridge-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: dt-bridge
+    namespace: dt-bridge
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dt-bridge-catalog-reader
+  namespace: kyverno
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [golden-images]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dt-bridge-catalog-reader
+  namespace: kyverno
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dt-bridge-catalog-reader
+subjects:
+  - kind: ServiceAccount
+    name: dt-bridge
+    namespace: dt-bridge
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -68,7 +116,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dt-bridge
-          image: harbor.127.0.0.1.nip.io/apps/dt-bridge@sha256:1e02ab031ef4ed52c373d59f0580a912b5a272190af1aa7c3724f3e2d38c2599
+          image: harbor.127.0.0.1.nip.io/apps/dt-bridge@sha256:1104bf7e204848363fe29e19b0c1cd5979ccf8dfbd23c43d7b9a6e10a71d316e
           ports:
             - name: http
               containerPort: 8080
@@ -86,6 +134,22 @@ spec:
               value: golden,apps
             - name: KUBESCAPE_NAMESPACE
               value: kubescape
+            - name: VICTORIALOGS_URL
+              value: http://victoria-logs.observability.svc.cluster.local:9428
+            - name: GOLDEN_CATALOG_CONFIGMAP
+              value: kyverno/golden-images
+            # Build identities of the governed images: build-image.yml, and golden.yml for golden images.
+            - name: SIGNER_OIDC_ISSUER
+              value: https://token.actions.githubusercontent.com
+            - name: SIGNER_IDENTITY_GOLDEN
+              value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/(golden|build-image)\.yml@refs/heads/(main|prd-.+)
+            - name: SIGNER_IDENTITY_APPS
+              value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/(main|prd-.+)
+            # The Sigstore trust root (TUF) is cached on the writable /tmp.
+            - name: XDG_CACHE_HOME
+              value: /tmp/cache
+            - name: XDG_DATA_HOME
+              value: /tmp/data
             - name: HARBOR_USERNAME
               valueFrom:
                 secretKeyRef:

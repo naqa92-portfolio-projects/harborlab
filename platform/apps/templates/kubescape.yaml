@@ -84,10 +84,10 @@ spec:
               memory: 768Mi
         nodeAgent:
           config:
-            # One alert per container and rule, then silence for this long (chart default 1h): every
-            # `task demo:runtime-shell` run raises its own alert.
+            # One alert per container, rule and process, then silence for this long (chart default 1h):
+            # every `task demo:runtime-shell` run raises its own alert.
             ruleCooldown:
-              ruleCooldownDuration: 10s
+              ruleCooldownDuration: 1s
           resources:
             requests:
               cpu: 100m

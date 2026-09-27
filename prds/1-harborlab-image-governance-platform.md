@@ -44,7 +44,7 @@
 
 ## State
 phase: 2
-milestone: 8/10
+milestone: 9/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
@@ -78,8 +78,8 @@ findings:
 - T5 fixed a028864 — fresh task up (M5 code): Kyverno admission/reports pods blocked ~12 min on FailedMount of ConfigMap kyverno-harborlab-ca (trust-manager Bundle target created late); bootstrap ordering between trust-manager Bundle and Kyverno (workloads now synced after Kyverno policies are ready; Kyverno still waits ~2.5 min on the CA ConfigMap)
 - T6 pending — dt-bridge reads the CycloneDX attestation and SLSA provenance from Harbor referrers without verifying their Sigstore signatures (SBOM/base integrity trusted blindly)
 - T7 pending — local CA generated without keyUsage; dt-bridge relaxes Python VERIFY_X509_STRICT for the Harbor client (workaround) instead of ensure_ca emitting a compliant CA
-- T8 pending — Argo CD Applications dependency-track and kubescape have no resources-finalizer (pruning leaves DT workloads orphaned) and, like hello-java earlier, can sit without operationState so task up's convergence wait never completes until a manual sync
-- T9 pending — on a fresh cluster task demo:runtime-shell can exec before node-agent has loaded the just-completed runtime-demo profile (storage sqlite interrupted/key not found), so no alert on first run (runtime_alert + observability flaky once, green on rerun)
+- T8 pending — Argo CD Applications dependency-track, kubescape and the six M8 ones have no resources-finalizer (pruning leaves DT workloads orphaned) and, like hello-java earlier, can sit without operationState so task up's convergence wait never completes until a manual sync
+- T9 pending — on a fresh cluster task demo:runtime-shell can exec before node-agent has loaded the just-completed runtime-demo profile (storage sqlite interrupted/key not found), so no alert on first run (runtime_alert + observability flaky on fresh/recreated profiles, reproduced at M8 green; also task demo:runtime-shell exited 124 when the recreated pod's profile was not completed within 120 s)
 demo:
 
 ## Milestones
@@ -92,7 +92,7 @@ demo:
 - [x] M5 — Golden-path apps: `dt-bridge` skeleton and `hello-java` built through the reusable workflow and deployed by ArgoCD in a workload namespace (dépend de M4)
 - [x] M6 — Vulnerability management: Dependency-Track 5.1 on CNPG, Harbor webhook → `dt-bridge` → DT SBOM upload, DHI OpenVEX → CycloneDX VEX conversion, pytest coverage (dépend de M5)
 - [x] M7 — Runtime: Kubescape operator (scan, CIS, runtime threat detection, VEX generation) with runtime OpenVEX forwarded to DT (dépend de M6)
-- [ ] M8 — Observability: VictoriaMetrics, VictoriaLogs, Grafana image-posture dashboard, Policy Reporter UI, memory budget verified (dépend de M7)
+- [x] M8 — Observability: VictoriaMetrics, VictoriaLogs, Grafana image-posture dashboard, Policy Reporter UI, memory budget verified (dépend de M7)
 - [ ] M9 — Docs & demo: README, ARCHITECTURE, ADRs, THREAT-MODEL, DEMO runbook, ROADMAP (air-gap bundle, Gatekeeper/Rego comparison, Buildah builds, chart relocation as OCI), all `task demo:*` scenarios green (dépend de M8)
 
 ## Context

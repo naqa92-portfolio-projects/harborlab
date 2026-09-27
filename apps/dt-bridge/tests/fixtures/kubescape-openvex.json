@@ -1,0 +1,94 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://openvex.dev/docs/public/vex-0000000000000000000000000000000000000000000000000000000000000000",
+  "author": "kubescape.io",
+  "role": "smart vulnerability scanner :-)",
+  "timestamp": "2026-09-27T10:00:00Z",
+  "last_updated": "2026-09-27T10:00:00Z",
+  "version": 1,
+  "tooling": "kubescape-vulnerability-analyzer",
+  "statements": [
+    {
+      "@id": "https://kubescape.io/vex/statement/CVE-2099-1001/pkg:deb%2Fdebian%2Fopenssl@3.5.7-1~deb13u2%2Bdhi1?arch=amd64&distro=debian-13",
+      "vulnerability": {
+        "@id": "https://example.invalid/advisories/CVE-2099-1001",
+        "name": "CVE-2099-1001"
+      },
+      "timestamp": "2026-09-27T10:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/hello-java@sha256%3A6ac6925e536d65164f9afeef6622770b7e38f0d70aa3f4361a3fa24c06958a73?repository_url=harbor.127.0.0.1.nip.io%2Fapps",
+          "subcomponents": [
+            {
+              "@id": "pkg:deb/debian/openssl@3.5.7-1~deb13u2%2Bdhi1?arch=amd64&distro=debian-13"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Vulnerable component is not loaded into the memory"
+    },
+    {
+      "@id": "https://kubescape.io/vex/statement/CVE-2099-1001/pkg:deb%2Fdebian%2Flibssl3t64@3.5.7-1~deb13u2%2Bdhi1?arch=amd64&distro=debian-13&upstream=openssl",
+      "vulnerability": {
+        "@id": "https://example.invalid/advisories/CVE-2099-1001",
+        "name": "CVE-2099-1001"
+      },
+      "timestamp": "2026-09-27T10:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/hello-java@sha256%3A6ac6925e536d65164f9afeef6622770b7e38f0d70aa3f4361a3fa24c06958a73?repository_url=harbor.127.0.0.1.nip.io%2Fapps",
+          "subcomponents": [
+            {
+              "@id": "pkg:deb/debian/libssl3t64@3.5.7-1~deb13u2%2Bdhi1?arch=amd64&distro=debian-13&upstream=openssl"
+            }
+          ]
+        }
+      ],
+      "status": "affected",
+      "action_statement": "Upgrade the vulnerable component to a version that is not affected"
+    },
+    {
+      "@id": "https://kubescape.io/vex/statement/GHSA-6v7p-g79w-8964/pkg:pypi%2Fmsgpack@1.1.2",
+      "vulnerability": {
+        "@id": "https://example.invalid/advisories/GHSA-6v7p-g79w-8964",
+        "name": "GHSA-6v7p-g79w-8964"
+      },
+      "timestamp": "2026-09-27T10:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/hello-java@sha256%3A6ac6925e536d65164f9afeef6622770b7e38f0d70aa3f4361a3fa24c06958a73?repository_url=harbor.127.0.0.1.nip.io%2Fapps",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/msgpack@1.1.2"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "Vulnerable component is not loaded into the memory"
+    },
+    {
+      "@id": "https://kubescape.io/vex/statement/CVE-2099-1003/pkg:pypi%2Fsetuptools@84.0.0",
+      "vulnerability": {
+        "@id": "https://example.invalid/advisories/CVE-2099-1003",
+        "name": "CVE-2099-1003"
+      },
+      "timestamp": "2026-09-27T10:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/hello-java@sha256%3A6ac6925e536d65164f9afeef6622770b7e38f0d70aa3f4361a3fa24c06958a73?repository_url=harbor.127.0.0.1.nip.io%2Fapps",
+          "subcomponents": [
+            {
+              "@id": "pkg:pypi/setuptools@84.0.0"
+            }
+          ]
+        }
+      ],
+      "status": "affected",
+      "action_statement": "Upgrade the vulnerable component to a version that is not affected"
+    }
+  ]
+}

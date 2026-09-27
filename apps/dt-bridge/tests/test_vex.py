@@ -197,3 +197,116 @@ def test_openvex_conversion_is_isolated_in_vex_module():
 
     assert (SOURCE_DIR / "vex.py").is_file()
     assert readers == []
+
+
+# Kubescape runtime OpenVEX: one statement per (vulnerability, package), the package as a subcomponent of the
+# image product. CVE-2099-1001 is not loaded from the openssl binary package but loaded from libssl3t64, whose
+# `upstream` qualifier names openssl: the runtime `affected` statement on libssl3t64 must win.
+KUBESCAPE_NOT_AFFECTED = {
+    ("CVE-2099-1001", OPENSSL + DEBIAN),
+    ("GHSA-6v7p-g79w-8964", "pkg:pypi/msgpack@1.1.2"),
+}
+
+
+def test_kubescape_affected_package_is_not_marked_not_affected():
+    document = load_fixture("kubescape-openvex.json")
+    sbom = load_fixture("cyclonedx-sbom.json")
+
+    vex = openvex_to_cyclonedx(document, sbom)
+
+    assert not_affected_pairs(vex) == KUBESCAPE_NOT_AFFECTED
+    for analysis in analyses_by_id(vex).values():
+        assert analysis["justification"] == "code_not_present"
+        for text in [
+            "kubescape.io",
+            "vulnerable_code_not_present",
+            "Vulnerable component is not loaded into the memory",
+        ]:
+            assert text in analysis["detail"], f"{text!r} missing from the analysis detail"
+
+
+HELLO_JAVA_DIGEST = "sha256:6ac6925e536d65164f9afeef6622770b7e38f0d70aa3f4361a3fa24c06958a73"
+NGINX_DIGEST = "sha256:295c7be079025306c4f1d65997fcf7adb411c88f139ad1d34b537164aa060369"
+
+
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        pytest.param(
+            f"docker.io/library/nginx@{NGINX_DIGEST}",
+            ("docker.io", "library/nginx", None, NGINX_DIGEST),
+            id="docker-io",
+        ),
+        pytest.param(
+            f"index.docker.io/library/nginx@{NGINX_DIGEST}",
+            ("docker.io", "library/nginx", None, NGINX_DIGEST),
+            id="index-docker-io",
+        ),
+        pytest.param(
+            f"registry-1.docker.io/library/nginx@{NGINX_DIGEST}",
+            ("docker.io", "library/nginx", None, NGINX_DIGEST),
+            id="registry-1-docker-io",
+        ),
+        pytest.param(
+            f"docker://nginx@{NGINX_DIGEST}",
+            ("docker.io", "library/nginx", None, NGINX_DIGEST),
+            id="docker-scheme-short-name",
+        ),
+        pytest.param(
+            f"pkg:oci/nginx@{NGINX_DIGEST.replace(':', '%3A')}?repository_url=index.docker.io/library",
+            ("docker.io", "library/nginx", None, NGINX_DIGEST),
+            id="purl-index-docker-io",
+        ),
+        pytest.param(
+            f"pkg:oci/nginx@{NGINX_DIGEST}?repository_url=docker.io%2Flibrary",
+            ("docker.io", "library/nginx", None, NGINX_DIGEST),
+            id="purl-docker-io-escaped",
+        ),
+        pytest.param(
+            "nginx:1.14.2",
+            ("docker.io", "library/nginx", "1.14.2", None),
+            id="short-name-tag",
+        ),
+        pytest.param(
+            f"harbor.127.0.0.1.nip.io/apps/hello-java@{HELLO_JAVA_DIGEST}",
+            ("harbor.127.0.0.1.nip.io", "apps/hello-java", None, HELLO_JAVA_DIGEST),
+            id="harbor-digest",
+        ),
+        pytest.param(
+            f"pkg:oci/hello-java@{HELLO_JAVA_DIGEST.replace(':', '%3A')}"
+            "?repository_url=harbor.127.0.0.1.nip.io%2Fapps",
+            ("harbor.127.0.0.1.nip.io", "apps/hello-java", None, HELLO_JAVA_DIGEST),
+            id="purl-harbor",
+        ),
+        pytest.param(
+            "harbor.127.0.0.1.nip.io/apps/hello-java:sha-6dccb9041c92265f4d88a98a04e1fcb1259a4120"
+            f"@{HELLO_JAVA_DIGEST}",
+            (
+                "harbor.127.0.0.1.nip.io",
+                "apps/hello-java",
+                "sha-6dccb9041c92265f4d88a98a04e1fcb1259a4120",
+                HELLO_JAVA_DIGEST,
+            ),
+            id="harbor-tag-and-digest",
+        ),
+        pytest.param(
+            "localhost:5000/team/app:1.0",
+            ("localhost:5000", "team/app", "1.0", None),
+            id="registry-with-port",
+        ),
+    ],
+)
+def test_kubescape_image_reference_is_normalised(reference, expected):
+    from dt_bridge.kubescape import image_reference
+
+    normalised = image_reference(reference)
+
+    assert (normalised.registry, normalised.repository, normalised.tag, normalised.digest) == expected
+
+
+@pytest.mark.parametrize("reference", ["", "pkg:npm/left-pad@1.3.0"])
+def test_kubescape_image_reference_rejects_non_image(reference):
+    from dt_bridge.kubescape import image_reference
+
+    with pytest.raises(ValueError):
+        image_reference(reference)

@@ -597,6 +597,106 @@ both loading `tests/supply-chain/{golden,apps}.bash` then `tests/platform/dt.bas
   limit set), ≤ 128 Mi for the frontend, ≤ 512 Mi for the CNPG instance; mirror only the vulnerability sources the
   golden images need (OSV for Debian, PyPI, Maven, GitHub advisories), not a full NVD mirror, unless measured to fit.
 
+M7 interface assumed by `tests/platform/runtime_vex.bats` (CAT-018, loading `tests/supply-chain/{golden,apps}.bash`
+then `tests/platform/dt.bash`) and the Kubescape tests of `apps/dt-bridge/tests/test_vex.py` (CAT-018). Kubescape
+data model taken from upstream (`kubescape/kubevuln` `docs/VEX.md`, `repositories/apiserver.go`;
+`kubescape/k8s-interface` `instanceidhandler/v1`; chart `kubescape-operator` `values.yaml`):
+- Tools: nothing new on the Devbox PATH (`kubectl`, `jq`, `curl`, `cosign`).
+- Kubescape operator (Decision 13): Argo CD Application `kubescape` (namespace `argocd`, child of `root`, Synced and
+  Healthy; `task up` still converges), chart `kubescape-operator` of `https://kubescape.github.io/helm-charts/` at an
+  exact version (1.40.4, the latest release when this was written), release and namespace `kubescape`, `clusterName:
+  harborlab`. `kubescape` is a platform namespace (no `harborlab.io/tier=workload` label; the node agent is
+  privileged, so no Pod Security `restricted` label either). Sync wave ≤ 3, before the workloads (wave 4), so on a
+  fresh `task up` the node agent sees the workload containers from their start. No ARMO cloud backend: no account,
+  access key or `server`; nothing leaves the cluster but Grype database downloads. Images come from `quay.io/kubescape`
+  through the Harbor quay.io proxy cache (platform tier: allow-list reported, not denied).
+- Capabilities enabled: `vulnerabilityScan` (kubevuln: syft SBOM + Grype), `relevancy`, `vexGeneration`,
+  `configurationScan` (NSA and CIS frameworks), `nodeScan` (CIS node checks), `runtimeObservability`,
+  `runtimeDetection` (criterion 20, asserted at M8). Disabled to fit the memory budget: `continuousScan`,
+  `networkPolicyService`, `networkEventsStreaming`, `nodeProfileService`, `admissionController` (Kyverno is the only
+  admission), `httpDetection`, `seccompProfileService`, `malwareDetection`, `autoUpgrading`, `syncSBOM`,
+  `manageWorkloads`, `prometheusExporter` (M8 may enable it). Only the VEX behaviour is asserted at M7.
+- Observed workloads: every namespace except the chart's default `excludeNamespaces` (`kubescape`, `kube-system`, …);
+  at least the workload namespaces `dt-bridge` and `hello-java` must be observed (`includeNamespaces` empty or
+  listing them).
+- Where Kubescape publishes its OpenVEX: `OpenVulnerabilityExchangeContainer` objects, API
+  `spdx.softwarecomposition.kubescape.io/v1beta1`, resource `openvulnerabilityexchangecontainers`, namespace
+  `kubescape`, served by the Kubescape storage aggregated APIService `v1beta1.spdx.softwarecomposition.kubescape.io`
+  (`Available=True`; not a CRD). The relevancy document of a container instance (kubevuln `ScanCP` flow) is named
+  after the instance-ID slug and carries the annotations `kubescape.io/instance-id`
+  (`apiVersion-apps/v1/namespace-<ns>/kind-ReplicaSet/name-<replicaset>/containerName-<container>`),
+  `kubescape.io/image-id` (the container's image ID, e.g. `harbor.127.0.0.1.nip.io/apps/hello-java@sha256:…`),
+  `kubescape.io/image-tag` and `kubescape.io/wlid`. Image-level documents (`ScanCVE`/`ScanRegistry`, named after the
+  image slug, no relevancy) state every match `affected`; dt-bridge may skip them, the test reads the instance one.
+  `.spec` is the OpenVEX document itself: `@context` `https://openvex.dev/ns/v0.2.0`, `author: kubescape.io`,
+  `version` (incremented on every real change), `last_updated`, `statements[]`, one per (vulnerability, package):
+  `vulnerability.name` (Grype's id, CVE or GHSA), `vulnerability.aliases`, `products: [{"@id":
+  "pkg:oci/<name>@<digest>?repository_url=<registry>/<path, percent-encoded or not>", "subcomponents": [{"@id":
+  "<package purl from Kubescape's own syft SBOM: Debian binary packages with upstream=, pypi, maven…>"}]}]`; status
+  `not_affected` + `vulnerable_code_not_present` + impact statement `Vulnerable component is not loaded into the
+  memory` when no file of the package was loaded, `affected` + `action_statement` when it was (SecurityException
+  variants exist, none are used here).
+- Observation time: a document exists only for a container seen from its start; the node agent's `learningPeriod`
+  (chart default 2m) must end, then kubevuln scans (the first scan downloads the Grype database), later updates
+  every `updatePeriod` (10m). The test restarts `hello-java/hello-java` (`kubectl rollout restart`: a new ReplicaSet,
+  hence a new instance ID) and waits up to 1200 s from the end of the rollout for the document, dt-bridge's upload and
+  the DT token `COMPLETED`.
+- Collection by dt-bridge: it lists (polling at most every 60 s) or watches the documents of namespace `kubescape`
+  with its own ServiceAccount `dt-bridge/dt-bridge` (a projected token mounted in the dt-bridge container only; the
+  pod keeps `automountServiceAccountToken: false` otherwise). RBAC least privilege: one Role in `kubescape` granting
+  `get`, `list`, `watch` on `openvulnerabilityexchangecontainers` of `spdx.softwarecomposition.kubescape.io` only,
+  bound to that ServiceAccount; no ClusterRole binding, no write verb, no Secret, ConfigMap or other Kubescape
+  resource (`vulnerabilitymanifests`, `sbomsyfts`, `applicationprofiles`), nothing in another namespace, and still no
+  Secret list or Pod creation in `dt-bridge`. Asserted with `kubectl auth can-i --as
+  system:serviceaccount:dt-bridge:dt-bridge`.
+- Image reference normalisation (Risk: `docker.io` vs `index.docker.io`), module `dt_bridge.kubescape`:
+  `image_reference(value: str) -> ImageReference`, a frozen dataclass with `registry: str`, `repository: str`,
+  `tag: str | None`, `digest: str | None`. Accepts an image reference (`[docker://]<registry>/<path>[:<tag>][@sha256:…]`
+  or a Docker Hub short name) or a Kubescape product purl `pkg:oci/<name>[@<digest>]?repository_url=<registry>/<path>`
+  (digest and repository_url percent-encoded or not). `docker.io`, `index.docker.io`, `registry-1.docker.io` and no
+  registry all give `docker.io`, a single-segment Docker Hub repository `library/<name>`; the first path segment is a
+  registry when it holds a `.` or a `:` or is `localhost`. `ValueError` for an empty value or a purl whose type is not
+  `oci`. A reference whose registry is the Harbor host (of `HARBOR_URL`) and whose first repository segment is a
+  governed project (`GOVERNED_PROJECTS`) maps to the DT project name `repository` (`apps/hello-java`) and the version
+  of the image tag Harbor holds for its digest (`sha-<40 hex>`; `sha256-*` referrers tags are not versions; the digest
+  of a running pod is all Kubescape knows, Kyverno having rewritten the image to its digest). Other references
+  (platform images from Docker Hub, quay.io, …) have no DT project and are skipped.
+- Conversion (Decision 14, "the same way as criterion 17"): the Kubescape document goes through the same
+  `dt_bridge.vex.openvex_to_cyclonedx(document, sbom)` as the DHI one, `sbom` being the attested CycloneDX SBOM of that
+  digest in Harbor (read as at M6; Kubescape's own SBOM is never uploaded). OpenVEX vocabulary stays in
+  `dt_bridge.vex` only (`test_openvex_conversion_is_isolated_in_vex_module` covers `dt_bridge.kubescape` too).
+  Conflicts: a statement of the same vulnerability with another status that names a component's own package (same
+  type, namespace, name, version) wins, so that component is not emitted `not_affected` for it; otherwise the
+  name-or-`upstream` coverage would let Kubescape's `not_affected` on the `openssl` binary package cover `libssl3t64`
+  (`upstream=openssl`), which Kubescape reports `affected` (unit:
+  `test_kubescape_affected_package_is_not_marked_not_affected`, fixture `kubescape-openvex.json`).
+- Upload: once the DT project version holds the attested SBOM (M6; uploaded first if missing, its token awaited),
+  dt-bridge re-keys on DT ids like M6 and sends `PUT /api/v1/vex`, also when DT lists no finding. A document is
+  forwarded again whenever its `spec.version` changes, not otherwise.
+- Log (the M6 `JsonFormatter`; `LOG_FIELDS` gains `kubescape` and `kubescape_version`): after each upload DT answers
+  HTTP 200 and dt-bridge logs `{"message": "Kubescape VEX uploaded", "image": "apps/hello-java", "tag": "sha-<40 hex>",
+  "digest": "sha256:<running digest>", "token": "<token of the PUT /api/v1/vex answer>", "project_uuid":
+  "<projectUuid of that answer>", "kubescape": "kubescape/<document name>", "kubescape_version": <spec.version>,
+  "vex": {<the CycloneDX VEX uploaded>}}`.
+- Live assertions: the last entry for the instance document at its current `spec.version`, logged since the restart,
+  has a token, the running digest and the DT project `apps/hello-java` version `<tag>`; the VEX is CycloneDX 1.4–1.7,
+  its components carry the `bom-ref` and `purl` of attested SBOM components that are DT project components; each
+  (vulnerability, component) pair matches a Kubescape `not_affected` statement of that vulnerability (id, alias, or DT
+  alias) covering the component, with `analysis.state` `not_affected`, the M6 justification mapping
+  (`vulnerable_code_not_present` → `code_not_present`) and a detail holding `kubescape.io`, the label and the impact
+  statement; no pair is one Kubescape reports `affected` (or another status) on that very package; every
+  `not_affected` statement covering attested components is converted for each of them unless another status of the
+  same vulnerability covers it; at least one such pair exists (non-vacuous); the DT token reaches `COMPLETED`. Guard:
+  each DT finding covered by an uncontested runtime `not_affected` statement shows `NOT_AFFECTED`, `CODE_NOT_PRESENT`
+  and the same texts in `analysisDetails`.
+- Grype (Kubescape) and Trivy (CI, Harbor) ids diverge: DT's own ids, aliases and the re-keying of M6 reconcile them;
+  the divergence itself is documented in an ADR (M9), not asserted.
+- Memory (criterion 22, measured at M8): the kind node used 6.3 GiB (`docker stats`) before M7, and M8 still adds
+  VictoriaMetrics, VictoriaLogs and Grafana; Kubescape must stay around 3 GiB in total. The chart defaults do not fit
+  (kubevuln requests 1000Mi, limit 5000Mi; node agent up to 1400Mi, at least 600Mi with `nodeSbomGeneration`;
+  storage up to 1500Mi): cap kubevuln near 1.5 GiB, the node agent near 700Mi, storage near 512Mi–1Gi, the other
+  components at 256Mi or less, and disable the unused capabilities above.
+
 Public-repo rules, binding for every test:
 - No secret, token, kubeconfig, private key or `.env` content is committed. `DHI_TOKEN` is read
   from the environment only; cluster credentials (Harbor, Grafana, DT API key) are read from their
@@ -631,7 +731,7 @@ Public-repo rules, binding for every test:
 | CAT-015 | 15 | M5 | live | create | For each app: Argo CD Application `<app>` is Synced and Healthy and manages Deployment `<app>` in namespace `<app>`, labelled `harborlab.io/tier=workload` and enforcing Pod Security `restricted`; the Deployment is fully available and its pods Running and Ready; every pod image is a Harbor `golden`/`apps` digest reference and the app container runs `harbor.127.0.0.1.nip.io/apps/<app>@sha256:…`, whose digest verifies with cosign against the `build-image.yml` admission identity with a SLSA provenance naming exactly one base, a `supported` catalog golden image. Live admission: each pod's PolicyReport holds a `pass` from the five workload policies and nothing else from them; a server dry-run of a restricted pod on the Harbor digest is admitted without warning while the same digest from GHCR is denied by `workload-registry` (control). The app answers through its Service on port 8080 (dt-bridge `GET /healthz` → `{"status": "ok"}`, hello-java `GET /` → 200). Decision 4 at runtime: the container mounts ConfigMap `harborlab-trust` at `/etc/harborlab-trust`; Python's default TLS context in dt-bridge (`SSL_CERT_FILE`) holds the local CA; the JVM of hello-java uses `/etc/harborlab-trust/truststore.p12` as a PKCS12 trust store (`JAVA_TOOL_OPTIONS`). | `tests/platform/golden_path_apps.bats > "dt-bridge runs admitted in a workload namespace, deployed by ArgoCD"`<br>`tests/platform/golden_path_apps.bats > "hello-java runs admitted in a workload namespace, deployed by ArgoCD"` |
 | CAT-016 | 16 | M6 | live | create | For `apps/hello-java` (build resolved as in CAT-007) then `golden/python` (as in CAT-005): the test runs the Harbor replication `apps-from-ghcr` / `golden-from-ghcr` through the admin API (the image is then in Harbor at tag `sha-<commit>`), verifies the image's CycloneDX attestation with `cosign verify-attestation --type cyclonedx` against the build identity on its Harbor digest, then within 300 s of the replication's end Dependency-Track holds project `<harbor project>/<repository>` version `sha-<commit>` whose `lastBomImport` is not older than the replication start and whose component purls equal the attested SBOM's (normalised; the attested SBOM, not a regenerated one); no DT version of that project is a `sha256-*` referrers tag. DT API key read from its cluster Secret into a variable and sent on stdin, never printed. | `tests/platform/dt_sbom_upload.bats > "replicated app image SBOM lands in Dependency-Track as attested"`<br>`tests/platform/dt_sbom_upload.bats > "replicated golden image SBOM lands in Dependency-Track as attested"`<br>helpers `tests/platform/dt.bash`, `tests/supply-chain/golden.bash`, `tests/supply-chain/apps.bash` |
 | CAT-017 | 17 | M6 | live | modify | For golden `python` (build as in CAT-005), the DHI base is read from its verified SLSA provenance and the attested CycloneDX SBOM from its verified attestation; the test logs in to dhi.io (`DHI_USERNAME`, `DHI_TOKEN` on stdin, throwaway `DOCKER_CONFIG`), takes the latest OpenVEX attestation among the OCI referrers of the DHI platform manifest matching the golden image and requires a `not_affected` statement covering an attested component (non-vacuous), runs `golden-from-ghcr`, then reads dt-bridge's `DHI VEX uploaded` log entry for project `golden/python` version `sha-<commit>` (see « VEX observables »): the uploaded VEX targets only attested SBOM components that are components of the DT project (Debian source-package products resolved to their binary packages), converts every uncontested covering statement with the mapped justification and the vendor author, label, notes and impact statement in the detail, was accepted for that DT project version, and its DT token reaches `COMPLETED` within 600 s. Guard: every DT finding covered by a DHI statement shows `NOT_AFFECTED` with the mapped `analysisJustification` and vendor details. **Partial proof**: the finding-level `NOT_AFFECTED` is not proven while DT lists no Debian finding (DT 5.1 ignores the `upstream=` qualifier, DependencyTrack/dependency-track#6132, #6957, `docs/ROADMAP.md`); the guard proves it automatically once DT matches source packages. Conversion logic itself is covered by CAT-019. | `tests/platform/dt_vex.bats > "dt-bridge converts DHI not_affected statements to a CycloneDX VEX that Dependency-Track accepts"`<br>helpers `tests/platform/dt.bash`, `tests/supply-chain/golden.bash`, `tests/supply-chain/apps.bash` |
-| CAT-018 | 18 | M7 | unit, live | create | Live: Kubescape has produced a runtime OpenVEX document for the running `dt-bridge` workload; for each of its `not_affected` statements whose CVE is a DT finding of that project, DT shows `NOT_AFFECTED` with the justification; at least one such statement exists. Unit: `docker.io/...` and `index.docker.io/...` references from Kubescape normalise to the same DT project. | `tests/platform/runtime_vex.bats > "Kubescape runtime OpenVEX is applied in Dependency-Track"`<br>`apps/dt-bridge/tests/test_vex.py::test_kubescape_image_reference_is_normalised` |
+| CAT-018 | 18 | M7 | unit, live | create | Live: Argo CD Application `kubescape` is Synced and Healthy and the Kubescape storage APIService is Available; `hello-java` is restarted so Kubescape observes its container from the start; the running digest's Harbor tag names the DT project `apps/hello-java` version `sha-<commit>` and its CycloneDX attestation is verified (build-image.yml identity at that commit). Within 1200 s the `OpenVulnerabilityExchangeContainer` of that container instance (`kubescape.io/instance-id`) exists with at least one `not_affected` statement covering an attested component uncontested at runtime (non-vacuous), and dt-bridge's `Kubescape VEX uploaded` entry for that document and `spec.version` carries the running digest, a token and the DT project's uuid; the uploaded VEX is the conversion of the runtime `not_affected` statements on attested SBOM components that are DT components (mapped justification, `kubescape.io`, label and impact statement in the detail), never marks `not_affected` a package Kubescape reports `affected`, misses no uncontested pair, and its DT token reaches `COMPLETED`. Guard: every DT finding covered by an uncontested runtime `not_affected` statement shows `NOT_AFFECTED` with `CODE_NOT_PRESENT` and the Kubescape texts. RBAC: the dt-bridge ServiceAccount can `get`/`list` those documents in `kubescape` and nothing more (no write, no cluster-wide list, no Secret, ConfigMap or other Kubescape resource). Unit: Docker Hub references (`docker.io`, `index.docker.io`, `registry-1.docker.io`, short names, `docker://`, Kubescape `pkg:oci` purls with an escaped or plain `repository_url`) normalise to one `docker.io/library/nginx` reference, Harbor references and purls to `apps/hello-java` with their digest or tag, a registry with a port is kept, non-images raise `ValueError`; the shared converter does not emit `not_affected` for a component whose own package Kubescape reports `affected` (`libssl3t64` under an `openssl` binary statement). **Partial proof**: the finding-level `NOT_AFFECTED` is not proven while DT lists no finding a runtime statement covers: DT has no Debian finding (DependencyTrack/dependency-track#6132, `docs/ROADMAP.md`) and `apps/hello-java` had no finding at all when this was written; the guard proves it once DT reports one. | `tests/platform/runtime_vex.bats > "Kubescape runtime OpenVEX is applied in Dependency-Track"`<br>`tests/platform/runtime_vex.bats > "dt-bridge reads Kubescape VEX documents with read-only access"`<br>`apps/dt-bridge/tests/test_vex.py::test_kubescape_image_reference_is_normalised`<br>`apps/dt-bridge/tests/test_vex.py::test_kubescape_image_reference_rejects_non_image`<br>`apps/dt-bridge/tests/test_vex.py::test_kubescape_affected_package_is_not_marked_not_affected`<br>fixture `apps/dt-bridge/tests/fixtures/kubescape-openvex.json`<br>helpers `tests/platform/dt.bash` (shared with CAT-017), `tests/supply-chain/golden.bash`, `tests/supply-chain/apps.bash` |
 | CAT-019 | 19 | M6 | unit | create | pytest with fixed fixtures (real-shaped Sigstore v0.3 bundles of CycloneDX and SPDX attestations with fake signature and certificate, a syft-shaped CycloneDX SBOM with Debian binary packages carrying `upstream`, a DHI-shaped OpenVEX document with repeated products, source-package names, every justification, an impact-statement-only and an `under_investigation` statement, fake DT API key `fake-dt-api-key-for-tests`): SBOM extracted unchanged from the bundle, a non-CycloneDX predicate and malformed bundles rejected with `AttestationError`; OpenVEX `not_affected` → CycloneDX VEX `not_affected` on exactly the SBOM components its products cover (source-package and version matching, unique bom-refs from the SBOM), justification mapped (none for `vulnerable_code_cannot_be_controlled_by_adversary`) and vendor text in the detail, unknown status and malformed documents rejected with `VexConversionError`, OpenVEX vocabulary read only in `vex.py` (Decision 14); DT client uploads BOM and VEX with the documented request shape and raises typed errors on 401, 5xx and timeout without leaking the key (`httpx.MockTransport` at the transport boundary). `ruff check` and `ruff format --check` pass on `apps/dt-bridge`, and a blocking CI job runs pytest and both ruff checks on pull requests touching it. | `apps/dt-bridge/tests/test_sbom.py::test_extracts_cyclonedx_predicate_from_attestation`<br>`apps/dt-bridge/tests/test_sbom.py::test_rejects_non_cyclonedx_predicate`<br>`apps/dt-bridge/tests/test_sbom.py::test_rejects_malformed_attestation`<br>`apps/dt-bridge/tests/test_vex.py::test_not_affected_becomes_cyclonedx_not_affected`<br>`apps/dt-bridge/tests/test_vex.py::test_vendor_justification_is_mapped`<br>`apps/dt-bridge/tests/test_vex.py::test_unknown_status_is_rejected`<br>`apps/dt-bridge/tests/test_vex.py::test_malformed_document_is_rejected`<br>`apps/dt-bridge/tests/test_vex.py::test_openvex_conversion_is_isolated_in_vex_module`<br>`apps/dt-bridge/tests/test_dt_client.py::test_upload_sends_bom_to_project_version`<br>`apps/dt-bridge/tests/test_dt_client.py::test_upload_vex_sends_vex_to_project_version`<br>`apps/dt-bridge/tests/test_dt_client.py::test_upload_raises_on_unauthorized`<br>`apps/dt-bridge/tests/test_dt_client.py::test_upload_raises_on_server_error`<br>`apps/dt-bridge/tests/test_dt_client.py::test_upload_raises_on_timeout`<br>`tests/ci/python_lint.bats > "ruff check and format pass on dt-bridge"`<br>`tests/ci/python_lint.bats > "dt-bridge pytest and ruff run on pull requests touching the app"`<br>fixtures `apps/dt-bridge/tests/fixtures/{cyclonedx-sbom,cyclonedx-attestation.sigstore,spdx-attestation.sigstore,openvex-document,openvex-unknown-status}.json` |
 | CAT-020 | 20 | M8 | live | create | `task demo:runtime-shell` is run; the Grafana query API (`/api/ds/query` on the VictoriaLogs datasource) returns a Kubescape runtime alert naming the target pod within 120 s of the task's start. Grafana credentials read from the cluster Secret, never printed. | `tests/platform/runtime_alert.bats > "runtime shell alert is visible in Grafana through VictoriaLogs within 2 minutes"` |
 | CAT-021 | 21 | M8 | live | create | Grafana dashboard `image-posture` exists with a per-golden-image variable listing every catalog image and panels for CVE counts by severity before and after VEX, share of signed/attested running images, admission violations and runtime alerts; each panel query returns non-empty data through `/api/ds/query`; the Policy Reporter UI API lists at least one PolicyReport whose source is Kyverno. | `tests/platform/observability.bats > "image posture dashboard shows every metric per golden image"`<br>`tests/platform/observability.bats > "Policy Reporter UI lists Kyverno PolicyReports"` |
@@ -649,7 +749,7 @@ digests, "missing" labels simulated by empty values; the live platform's admissi
 at M4), CAT-013 ("every PR" over time), CAT-015 (the JVM trust store is proven by the JVM's own
 properties: hello-java makes no TLS call at M5; the store's content is CAT-D04's), CAT-017 (finding-level
 `NOT_AFFECTED` unproven: DT lists no Debian finding until DependencyTrack/dependency-track#6132 lands; fetch,
-conversion and DT acceptance are proven), CAT-025 (English detected heuristically).
+conversion and DT acceptance are proven), CAT-018 (same limit for runtime OpenVEX: collection, conversion and DT acceptance are proven, finding-level `NOT_AFFECTED` waits for a DT finding a runtime statement covers), CAT-025 (English detected heuristically).
 
 ## Démo
 

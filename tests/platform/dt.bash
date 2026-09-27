@@ -16,6 +16,12 @@ DT_API_KEY_NAMESPACE=dt-bridge
 DT_API_KEY_SECRET=dependency-track-api-key
 DT_API_KEY_FIELD=api-key
 DT_PAGE_SIZE=500
+DT_BRIDGE_NAMESPACE=dt-bridge
+DT_BRIDGE_SELECTOR=app.kubernetes.io/name=dt-bridge
+DT_BRIDGE_CONTAINER=dt-bridge
+# Pod and host share the clock; this absorbs the second truncation of --since-time only.
+LOG_MARGIN_SECONDS=2
+UUID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
 dt_setup_file() {
   [ -s "$PLATFORM_KUBECONFIG" ] || fail "platform is not up: $PLATFORM_KUBECONFIG missing (run task up)"
@@ -169,4 +175,30 @@ PURL_JQ='def purl_decode: gsub("%2[Bb]"; "+") | gsub("%3[Aa]"; ":") | gsub("%40"
 cyclonedx_purls() {
   jq -r "$PURL_JQ"' def comps: .[]? | (., (.components // [] | comps));
     [.components // [] | comps | .purl // empty | purl_norm] | unique[]'
+}
+
+# jq definitions over purl_parts (PURL_JQ): parts_cover is purl_covers on pre-parsed purls, so a VEX product
+# is compared with ~3000 SBOM components without re-parsing them.
+VEX_JQ="$PURL_JQ"'
+  def parts_cover($p; $c): $p.namespace == $c.namespace and ($p.name == $c.name or $p.name == $c.upstream)
+    and ($p.version == null or $p.version == $c.version);
+  def comps: .[]? | (., (.components // [] | comps));'
+
+# Writes to file $2 the components of the CycloneDX SBOM in file $1 (nested ones included) that have a purl:
+# [{ref, purl, norm, parts}].
+attested_components() {
+  jq "$VEX_JQ"' [.components // [] | comps | select((.purl // "") != "")
+      | {ref: (.["bom-ref"] // ""), purl, norm: (.purl | purl_norm), parts: (.purl | purl_parts)}]' "$1" >"$2"
+}
+
+# dt-bridge log entries (JSON lines) about image $1 tag $2 since $3 (RFC 3339), as a JSON array in file $4.
+dt_bridge_entries() {
+  local raw="$BATS_TEST_TMPDIR/dt-bridge.log"
+  kubectl -n "$DT_BRIDGE_NAMESPACE" logs -l "$DT_BRIDGE_SELECTOR" -c "$DT_BRIDGE_CONTAINER" --tail=-1 \
+    --since-time="$3" >"$raw" 2>"$raw.err" || {
+    fail "cannot read the dt-bridge logs: $(tail -n 3 "$raw.err")"
+    return 1
+  }
+  jq -R -n --arg image "$1" --arg tag "$2" \
+    '[inputs | fromjson? | select(type == "object" and .image == $image and .tag == $tag)]' "$raw" >"$4"
 }

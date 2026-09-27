@@ -26,6 +26,8 @@ PLATFORM_CREDENTIALS=(
   "platform/dependency-track-db|password|dependency-track/dependency-track-db-credentials|password"
   "platform/dependency-track-admin|password|-|-"
   "platform/dependency-track-api-key|api-key|dt-bridge/dependency-track-api-key|api-key"
+  "platform/grafana-admin|username|observability/grafana-admin|admin-user"
+  "platform/grafana-admin|password|observability/grafana-admin|admin-password"
 )
 
 fail() {

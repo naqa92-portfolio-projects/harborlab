@@ -20,8 +20,8 @@ die() {
 
 pod="$(kubectl -n "$NAMESPACE" get pods -l "app.kubernetes.io/name=$DEPLOYMENT" -o json | jq -r '
   [.items[] | select(.metadata.deletionTimestamp == null)
-    | select(any(.status.containerStatuses[]?; .ready and .state.running != null))] | first
-  | "\(.metadata.name) \(.metadata.labels["pod-template-hash"] // "")" // empty')"
+    | select(any(.status.containerStatuses[]?; .ready and .state.running != null))] | .[0] // empty
+  | "\(.metadata.name) \(.metadata.labels["pod-template-hash"] // "")"')"
 [ -n "$pod" ] || die "no running pod of deployment $NAMESPACE/$DEPLOYMENT"
 read -r pod hash <<<"$pod"
 

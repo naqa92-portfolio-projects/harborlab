@@ -9,10 +9,19 @@ from urllib.parse import urlparse
 
 import certifi
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import PlainTextResponse
 
 from dt_bridge.dt_client import DependencyTrackClient, DependencyTrackError
 from dt_bridge.kubescape import IMAGE_ID_ANNOTATION, KubescapeError, VexDocuments, image_reference
 from dt_bridge.pipeline import Bridge, ImageRef, PendingVex, images_of_event
+from dt_bridge.posture import (
+    HarborApi,
+    Identities,
+    KubernetesApi,
+    Posture,
+    SigstoreVerdicts,
+    VictoriaLogs,
+)
 from dt_bridge.registry import Registry, RegistryError
 from dt_bridge.sbom import AttestationError
 from dt_bridge.vex import VexConversionError
@@ -34,6 +43,7 @@ LOG_FIELDS = (
 )
 KUBERNETES_API_URL = "https://kubernetes.default.svc"
 KUBESCAPE_POLL_SECONDS = 30
+POSTURE_REFRESH_SECONDS = 30
 
 
 class JsonFormatter(logging.Formatter):
@@ -169,6 +179,47 @@ def kubescape_worker(bridge: Bridge, documents: VexDocuments, harbor_host: str, 
         time.sleep(KUBESCAPE_POLL_SECONDS)
 
 
+def build_posture(governed: set[str], kubescape_namespace: str | None) -> Posture:
+    harbor_url = required_env("HARBOR_URL")
+    bridge = build_bridge()
+    catalog_namespace, _, catalog_name = required_env("GOLDEN_CATALOG_CONFIGMAP").partition("/")
+    documents = (
+        VexDocuments(kubescape_namespace, KUBERNETES_API_URL).instance_documents
+        if kubescape_namespace
+        else list
+    )
+    identities = Identities(
+        issuer=required_env("SIGNER_OIDC_ISSUER"),
+        by_project={
+            "golden": required_env("SIGNER_IDENTITY_GOLDEN"),
+            "apps": required_env("SIGNER_IDENTITY_APPS"),
+        },
+    )
+    return Posture(
+        bridge,
+        bridge.dt,
+        HarborApi(
+            harbor_url,
+            required_env("HARBOR_USERNAME"),
+            required_env("HARBOR_PASSWORD"),
+            ca_file=required_env("HARBOR_CA_FILE"),
+        ),
+        KubernetesApi(KUBERNETES_API_URL),
+        VictoriaLogs(required_env("VICTORIALOGS_URL")),
+        harbor_host=urlparse(harbor_url).netloc,
+        governed_projects=governed,
+        catalog_configmap=(catalog_namespace, catalog_name),
+        kubescape_documents=documents,
+        verdicts=lambda: SigstoreVerdicts(identities),
+    )
+
+
+def posture_worker(posture: Posture) -> None:
+    while True:
+        posture.refresh()
+        time.sleep(POSTURE_REFRESH_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     app.state.governed_projects = set(os.environ.get("GOVERNED_PROJECTS", "golden,apps").split(","))
@@ -188,6 +239,12 @@ async def lifespan(_: FastAPI):
             daemon=True,
             name="kubescape-worker",
         ).start()
+    app.state.posture = None
+    if os.environ.get("VICTORIALOGS_URL"):
+        app.state.posture = build_posture(app.state.governed_projects, kubescape_namespace)
+        threading.Thread(
+            target=posture_worker, args=(app.state.posture,), daemon=True, name="posture-worker"
+        ).start()
     yield
 
 
@@ -197,6 +254,13 @@ app = FastAPI(title="dt-bridge", lifespan=lifespan)
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def metrics(request: Request) -> str:
+    """Image posture metrics in the Prometheus text format; empty until the first refresh."""
+    posture = request.app.state.posture
+    return posture.metrics() if posture else ""
 
 
 @app.post("/harbor/events", status_code=202)

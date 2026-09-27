@@ -16,7 +16,7 @@ from dt_bridge.vex import VexConversionError
 
 # Bounds the work a burst of (possibly forged) webhook calls can queue; every job re-reads Harbor.
 MAX_QUEUED_IMAGES = 200
-LOG_FIELDS = ("image", "tag", "digest", "components", "vulnerabilities", "dhi", "error")
+LOG_FIELDS = ("image", "tag", "digest", "token", "project_uuid", "components", "vex", "dhi", "error")
 
 
 class JsonFormatter(logging.Formatter):

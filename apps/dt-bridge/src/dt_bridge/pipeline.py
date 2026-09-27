@@ -106,6 +106,7 @@ class Bridge:
                 "image": image.path,
                 "tag": image.tag,
                 "digest": digest,
+                "token": token,
                 "components": len(sbom.get("components", [])),
             },
         )
@@ -123,12 +124,20 @@ class Bridge:
         self._wait_for_analysis(pending.token)
         vex = self._on_dependency_track_findings(image, pending.vex)
         if not vex["vulnerabilities"]:
-            log.info("no DHI VEX statement matches a finding", extra={"image": image.path, "tag": image.tag})
+            log.info(
+                "no DHI VEX statement covers an SBOM component", extra={"image": image.path, "tag": image.tag}
+            )
             return
-        self.dt.upload_vex(image.path, image.tag, vex)
+        answer = self.dt.upload_vex(image.path, image.tag, vex)
         log.info(
             "DHI VEX uploaded",
-            extra={"image": image.path, "tag": image.tag, "vulnerabilities": len(vex["vulnerabilities"])},
+            extra={
+                "image": image.path,
+                "tag": image.tag,
+                "token": answer.get("token"),
+                "project_uuid": answer.get("projectUuid"),
+                "vex": vex,
+            },
         )
 
     def _dhi_base(self, image: ImageRef, provenances: list[dict]) -> tuple[str, str] | None:
@@ -203,7 +212,7 @@ class Bridge:
         return best[1]
 
     def _wait_for_analysis(self, token: str) -> None:
-        """VEX only applies to existing findings: waits for the BOM processing, analysis included."""
+        """Waits for the BOM processing, analysis included, so the VEX meets the findings it produced."""
         deadline = time.monotonic() + ANALYSIS_TIMEOUT_SECONDS
         while (status := self.dt.token_status(token)) not in TERMINAL_TOKEN_STATUSES:
             if time.monotonic() > deadline:
@@ -212,7 +221,7 @@ class Bridge:
 
     def _on_dependency_track_findings(self, image: ImageRef, vex: dict) -> dict:
         """Re-keys the VEX on Dependency-Track's own vulnerability ids (a CVE may be held as an OSV or GHSA
-        id with the CVE as alias) and keeps only the component and vulnerability pairs DT reports."""
+        id with the CVE as alias) where DT reports the pair as a finding; other pairs keep their VEX id."""
         uuid = self.dt.project_uuid(image.path, image.tag)
         findings = self.dt.findings(uuid) if uuid else []
         deadline = time.monotonic() + FINDINGS_TIMEOUT_SECONDS
@@ -222,7 +231,9 @@ class Bridge:
 
         purl_by_ref = {c["bom-ref"]: purl_key(c["purl"]) for c in vex["components"] if c.get("purl")}
         rekeyed: dict[tuple[str, str], dict] = {}
+        unmatched: list[dict] = []
         for vulnerability in vex["vulnerabilities"]:
+            matched_refs: set[str] = set()
             refs_by_purl: dict[str, list[str]] = {}
             for affect in vulnerability["affects"]:
                 refs_by_purl.setdefault(purl_by_ref.get(affect["ref"], ""), []).append(affect["ref"])
@@ -249,7 +260,11 @@ class Bridge:
                     },
                 )
                 entry["affects"] += [{"ref": ref} for ref in refs if {"ref": ref} not in entry["affects"]]
-        return {**vex, "vulnerabilities": list(rekeyed.values())}
+                matched_refs.update(refs)
+            remaining = [affect for affect in vulnerability["affects"] if affect["ref"] not in matched_refs]
+            if remaining:
+                unmatched.append({**vulnerability, "affects": remaining})
+        return {**vex, "vulnerabilities": list(rekeyed.values()) + unmatched}
 
 
 def images_of_event(event: dict, governed_projects: set[str]) -> list[ImageRef]:

@@ -80,11 +80,11 @@ class DependencyTrackClient:
         response = self._expect(self._request("PUT", "/api/v1/bom", json=body), 200)
         return response.json()["token"]
 
-    def upload_vex(self, project_name: str, project_version: str, vex: dict) -> str | None:
-        """Uploads a CycloneDX VEX onto the existing findings of the project version."""
+    def upload_vex(self, project_name: str, project_version: str, vex: dict) -> dict:
+        """Uploads a CycloneDX VEX into the project version; returns DT's answer (`token`, `projectUuid`)."""
         body = {"projectName": project_name, "projectVersion": project_version, "vex": _encoded(vex)}
         response = self._expect(self._request("PUT", "/api/v1/vex", json=body), 200)
-        return response.json().get("token") if response.content else None
+        return response.json() if response.content else {}
 
     def token_status(self, token: str) -> str | None:
         """PENDING, RUNNING, COMPLETED or FAILED; None while no processing is associated with the token."""

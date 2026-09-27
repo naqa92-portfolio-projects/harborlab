@@ -1,0 +1,30 @@
+name: runtime-demo
+
+# Golden-path contract: the platform's build-image.yml builds, scans, signs and attests the image.
+# PRD branches (prd-*) publish too, so the image exists before the merge.
+on:
+  push:
+    branches:
+      - main
+      - prd-*
+    paths:
+      - apps/runtime-demo/**
+      - .github/workflows/runtime-demo.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: runtime-demo-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: apps/runtime-demo
+      context: apps/runtime-demo

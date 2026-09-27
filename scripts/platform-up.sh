@@ -22,8 +22,8 @@ CILIUM_CHART_VERSION=1.20.2
 ARGOCD_CHART_VERSION=10.9.2
 
 # Applications running images of Harbor `apps`: they converge only once Harbor has replicated them.
-WORKLOAD_APPLICATIONS='["dt-bridge", "hello-java"]'
-GOVERNED_REPLICATIONS=(golden-from-ghcr apps-from-ghcr)
+WORKLOAD_APPLICATIONS='["dt-bridge", "hello-java", "runtime-demo"]'
+GOVERNED_REPLICATIONS=(golden-from-ghcr apps-from-ghcr apps-demo-from-ghcr)
 REPLICATION_TIMEOUT_SECONDS=900
 
 STABLE_SECONDS=60
@@ -67,7 +67,7 @@ ensure_cluster() {
   else
     log "creating kind cluster $CLUSTER"
     rm -f "$PLATFORM_KUBECONFIG"
-    kind create cluster --config "$REPO_ROOT/platform/kind/cluster.yaml" --kubeconfig "$PLATFORM_KUBECONFIG"
+    (cd "$REPO_ROOT" && kind create cluster --config platform/kind/cluster.yaml --kubeconfig "$PLATFORM_KUBECONFIG")
   fi
   (umask 077 && kind get kubeconfig --name "$CLUSTER" >"$PLATFORM_KUBECONFIG.tmp")
   mv "$PLATFORM_KUBECONFIG.tmp" "$PLATFORM_KUBECONFIG"
@@ -284,6 +284,7 @@ seed_credentials() {
 
   random_strings 32 | jq -Rn '{username: "dtrack", password: input}' | seed_once platform/dependency-track-db
   random_strings 24 | jq -Rn '{password: (input + "Aa1")}' | seed_once platform/dependency-track-admin
+  random_strings 24 | jq -Rn '{username: "admin", password: input}' | seed_once platform/grafana-admin
 
   # The dhi.io credential comes from the environment (git-ignored .env), read by jq.
   if ! openbao_has platform/dhi; then

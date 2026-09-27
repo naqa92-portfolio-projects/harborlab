@@ -22,6 +22,9 @@ locals {
     apps   = { ghcr_filter = "naqa92-portfolio-projects/harborlab/apps/{dt-bridge,hello-java}" }
   }
 
+  # The runtime-detection demo target lands in `apps` through its own policy, apart from the applications.
+  runtime_demo_filter = "naqa92-portfolio-projects/harborlab/apps/runtime-demo"
+
   # Harbor cron expressions carry a leading seconds field.
   replication_cron = "0 */15 * * * *"
   retention_cron   = "0 0 3 * * *"
@@ -94,6 +97,23 @@ resource "harbor_replication" "governed" {
 
   filters {
     name = each.value.ghcr_filter
+  }
+}
+
+resource "harbor_replication" "runtime_demo" {
+  name                   = "apps-demo-from-ghcr"
+  description            = "Pull ${local.runtime_demo_filter} from GHCR into Harbor project apps"
+  action                 = "pull"
+  registry_id            = harbor_registry.proxy["ghcr"].registry_id
+  dest_namespace         = harbor_project.governed["apps"].name
+  dest_namespace_replace = -1
+  schedule               = local.replication_cron
+  override               = true
+  enabled                = true
+  deletion               = false
+
+  filters {
+    name = local.runtime_demo_filter
   }
 }
 

@@ -1,0 +1,45 @@
+# Policy Reporter and its UI (Decision 15): the Kyverno PolicyReports of every namespace, served without
+# login on the local Gateway only.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: policy-reporter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: policy-reporter
+  sources:
+    - repoURL: https://kyverno.github.io/policy-reporter
+      chart: policy-reporter
+      targetRevision: 3.10.0
+      helm:
+        releaseName: policy-reporter
+        valuesObject:
+          # The chart default drops the reports of Pods owned by a controller: every report is listed.
+          sourceFilters: []
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 96Mi
+          ui:
+            enabled: true
+            resources:
+              requests:
+                cpu: 10m
+                memory: 16Mi
+              limits:
+                memory: 64Mi
+    - repoURL: {{ .Values.repoURL }}
+      targetRevision: {{ .Values.revision }}
+      path: platform/observability/policy-reporter
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

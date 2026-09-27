@@ -14,6 +14,28 @@ nodes:
         hostPort: 443
         listenAddress: 127.0.0.1
         protocol: TCP
+    # API server audit events on its stdout, where the log collector reads them. The relative host path
+    # is resolved from the repository root, where `task up` runs kind.
+    extraMounts:
+      - hostPath: platform/kind/audit-policy.yaml
+        containerPath: /etc/kubernetes/policies/audit-policy.yaml
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          # kubeadm v1beta4 argument list, merged by kind into its own.
+          extraArgs:
+            - name: audit-log-path
+              value: "-"
+            - name: audit-policy-file
+              value: /etc/kubernetes/policies/audit-policy.yaml
+          extraVolumes:
+            - name: audit-policies
+              hostPath: /etc/kubernetes/policies
+              mountPath: /etc/kubernetes/policies
+              readOnly: true
+              pathType: DirectoryOrCreate
 containerdConfigPatches:
   - |-
     [plugins."io.containerd.grpc.v1.cri".registry]

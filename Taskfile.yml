@@ -49,3 +49,8 @@ tasks:
     desc: 'Platform lint of the repository, or of another git work tree (task lint -- <dir>)'
     cmds:
       - ./scripts/lint.sh {{.CLI_ARGS}}
+
+  demo:runtime-shell:
+    desc: Run a shell in the runtime-demo workload container; Kubescape alerts on it (VictoriaLogs, Grafana)
+    cmds:
+      - ./scripts/demo-runtime-shell.sh

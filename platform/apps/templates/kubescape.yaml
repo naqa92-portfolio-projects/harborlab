@@ -21,6 +21,10 @@ spec:
       releaseName: kubescape
       valuesObject:
         clusterName: harborlab
+        # Default runtime rules (Rules default-rules, RuntimeRuleAlertBinding all-rules-all-pods): node-agent
+        # prints each alert as a JSON line on its stderr, shipped to VictoriaLogs.
+        alertCRD:
+          installDefault: true
         # Certificates generated at runtime by init containers: template ones change on every render.
         certificates:
           strategy: initContainer
@@ -79,6 +83,11 @@ spec:
             limits:
               memory: 768Mi
         nodeAgent:
+          config:
+            # One alert per container and rule, then silence for this long (chart default 1h): every
+            # `task demo:runtime-shell` run raises its own alert.
+            ruleCooldown:
+              ruleCooldownDuration: 10s
           resources:
             requests:
               cpu: 100m

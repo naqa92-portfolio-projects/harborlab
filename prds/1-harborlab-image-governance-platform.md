@@ -67,6 +67,7 @@ findings:
 - T2 pending — workload signature identity accepts build-image.yml@refs/heads/(main|prd-.+): any prd-* branch can sign admissible images; production should trust main only (review at phase 3)
 - T3 pending — public-repo audit 2026-09-27: no ruleset / branch protection on main and prd-*; with T2 the signing identity is only as strong as who can push those refs (human action: ruleset protecting main + restricting prd-* creation)
 - T4 pending — after docker stop/start of the kind node, platform does not reconverge: kyverno-reports-controller CrashLoop (leader lease lost, client rate limiter deadline, 64-128Mi limits) and Argo CD keeps harbor/platform-config Degraded with all children Healthy; rebuilt with task down && task up
+- T5 pending — fresh task up (M5 code): Kyverno admission/reports pods blocked ~12 min on FailedMount of ConfigMap kyverno-harborlab-ca (trust-manager Bundle target created late); bootstrap ordering between trust-manager Bundle and Kyverno
 demo:
 
 ## Milestones

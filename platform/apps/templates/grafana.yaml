@@ -67,17 +67,17 @@ spec:
                     path: /var/lib/grafana/dashboards/harborlab
           dashboardsConfigMaps:
             harborlab: grafana-dashboard-image-posture
-          # GOMEMLIMIT at 55% of the limit (chart default 90%) keeps the heap near its live size; the limit
+          # GOMEMLIMIT at 50% of the limit (chart default 90%) keeps the heap near its live size; the limit
           # leaves room for the start-up peak and the VictoriaLogs plugin process.
           goMemLimit:
             enabled: true
-            factor: 0.55
+            factor: 0.5
           resources:
             requests:
               cpu: 50m
               memory: 256Mi
             limits:
-              memory: 448Mi
+              memory: 384Mi
           # Start-up (plugin install, storage migrations) exceeds the default 60 s liveness delay.
           startupProbe:
             httpGet:

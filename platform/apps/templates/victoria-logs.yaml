@@ -29,7 +29,7 @@ spec:
                 cpu: 50m
                 memory: 64Mi
               limits:
-                memory: 256Mi
+                memory: 160Mi
     - repoURL: https://victoriametrics.github.io/helm-charts/
       chart: victoria-logs-collector
       targetRevision: 0.3.7
@@ -44,7 +44,7 @@ spec:
               cpu: 20m
               memory: 32Mi
             limits:
-              memory: 128Mi
+              memory: 96Mi
   syncPolicy:
     {{- toYaml .Values.syncPolicy | nindent 4 }}
     syncOptions:

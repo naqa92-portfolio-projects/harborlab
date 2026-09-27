@@ -44,7 +44,7 @@
 
 ## State
 phase: 2
-milestone: 7/10
+milestone: 8/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
@@ -65,6 +65,7 @@ notes-m6: red 5092789; accepted tester decisions — VEX conversion resolves DHI
 decision-m6: human (2026-09-27) chose option A — keep DT, criterion 17 narrowed to fetch + convert + DT acceptance; finding-level proof unproven pending DependencyTrack/dependency-track#6132/#6957 (docs/ROADMAP.md); coder M6 commits 653e718 bf36dc6 78bac40 2a363a5 2618913 4e1dee8 e9c0f0e; red rework 71e3991 (VEX observables: upload even without findings, "DHI VEX uploaded" log with token/project_uuid/vex, DT token COMPLETED); coder fix feaf361 5d73d0d b12b3f7 6c7919f (VEX upload without findings, dedup of repeated DHI statements, DT token COMPLETED: 52 vulns on 36 components)
 notes-m7: red 4a54a21 (CAT-018 narrowed like 17, partial proof; real converter bug found: name-or-upstream rule marks libssl3t64 not_affected when Kubescape says affected). Memory risk for criterion 22: node 6.3 GiB before M7, Kubescape target ~3 GiB, M8 observability still to come
 resolved-m7: human ok (2026-09-27), test fixed 9405f91 (runtime_vex 2/2 green) — tester fixes the list call with resourceVersion=fullSpec; was: M7 — coder 4e34bc1 ece36bb 6a171c5 f780ceb, all green except runtime_vex.bats #1 which the coder says is wrong: instance_vex_document lists OpenVulnerabilityExchangeContainer with plain `kubectl get -o json`, but kubescape/storage returns metadata only on list unless resourceVersion=fullSpec (pkg/registry/file/storage.go) → spec.statements null; with fullSpec the copied test passes (248 pairs, token COMPLETED, 62 vulns on 8 components). Node memory after M7: 8.63 GiB (docker stats), Kubescape ~1.8 GiB used / 3.4 GiB limits
+notes-m7b: M7 green+load-bearing; fresh task up 897 s with one manual external-secrets resync (Argo clock panic, needs ServerSideApply options); node memory 8.2–8.4 GiB after M7 (budget 10 GiB)
 pr: none
 findings:
 - T1 pending — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
@@ -74,7 +75,7 @@ findings:
 - T5 fixed a028864 — fresh task up (M5 code): Kyverno admission/reports pods blocked ~12 min on FailedMount of ConfigMap kyverno-harborlab-ca (trust-manager Bundle target created late); bootstrap ordering between trust-manager Bundle and Kyverno (workloads now synced after Kyverno policies are ready; Kyverno still waits ~2.5 min on the CA ConfigMap)
 - T6 pending — dt-bridge reads the CycloneDX attestation and SLSA provenance from Harbor referrers without verifying their Sigstore signatures (SBOM/base integrity trusted blindly)
 - T7 pending — local CA generated without keyUsage; dt-bridge relaxes Python VERIFY_X509_STRICT for the Harbor client (workaround) instead of ensure_ca emitting a compliant CA
-- T8 pending — Argo CD Application dependency-track has no resources-finalizer (pruning leaves DT workloads orphaned) and, like hello-java earlier, can sit without operationState so task up's convergence wait never completes until a manual sync
+- T8 pending — Argo CD Applications dependency-track and kubescape have no resources-finalizer (pruning leaves DT workloads orphaned) and, like hello-java earlier, can sit without operationState so task up's convergence wait never completes until a manual sync
 demo:
 
 ## Milestones
@@ -86,7 +87,7 @@ demo:
 - [x] M4 — Admission: Kyverno CEL policies per trust tier fed by the catalog, PSA restricted, digest mutation, `kyverno test` + Chainsaw E2E in GitHub Actions (dépend de M3)
 - [x] M5 — Golden-path apps: `dt-bridge` skeleton and `hello-java` built through the reusable workflow and deployed by ArgoCD in a workload namespace (dépend de M4)
 - [x] M6 — Vulnerability management: Dependency-Track 5.1 on CNPG, Harbor webhook → `dt-bridge` → DT SBOM upload, DHI OpenVEX → CycloneDX VEX conversion, pytest coverage (dépend de M5)
-- [ ] M7 — Runtime: Kubescape operator (scan, CIS, runtime threat detection, VEX generation) with runtime OpenVEX forwarded to DT (dépend de M6)
+- [x] M7 — Runtime: Kubescape operator (scan, CIS, runtime threat detection, VEX generation) with runtime OpenVEX forwarded to DT (dépend de M6)
 - [ ] M8 — Observability: VictoriaMetrics, VictoriaLogs, Grafana image-posture dashboard, Policy Reporter UI, memory budget verified (dépend de M7)
 - [ ] M9 — Docs & demo: README, ARCHITECTURE, ADRs, THREAT-MODEL, DEMO runbook, ROADMAP (air-gap bundle, Gatekeeper/Rego comparison, Buildah builds, chart relocation as OCI), all `task demo:*` scenarios green (dépend de M8)
 

@@ -68,6 +68,7 @@ resolved-m7: human ok (2026-09-27), test fixed 9405f91 (runtime_vex 2/2 green) �
 notes-m7b: M7 green+load-bearing; fresh task up 897 s with one manual external-secrets resync (Argo clock panic, needs ServerSideApply options); node memory 8.2–8.4 GiB after M7 (budget 10 GiB)
 notes-m8: red 9d3e915; CVE panel = Harbor Trivy (OS pkgs, VEX applied by harborlab) + DT (app ecosystems); risks: demo target needs a governed shell-equipped container (golden runtime images have no shell), admission denials need a per-image source (CEL denials emit no event)
 resolved-m8: human (2026-09-27), tests reworked 8e3193d (all M8 green; 4 Deny policies need failurePolicy Fail, deprecated one is Warn/Audit+Ignore by design) — tests fixed by tester (runtime_alert:54, Policy Reporter sources= filter); criterion 22 raised to 12 GiB and kube-apiserver GOGC=50 workaround to be removed; golden_path_apps proves admission by server dry-run (5 Deny policies) + webhook failurePolicy Fail, PolicyReports eventual; was: M8 — coder 48d6efc..5bf8da2 (10 commits). Objections: runtime_alert.bats:54 kubectl name+selector error; observability.bats Policy Reporter check requires .source absent from policy-reporter-ui API (filter with sources= instead). Human decisions: (a) criterion 22 — kubectl top nodes 10052–10219 Mi on fresh cluster, peak 10429 Mi > 10240 after full suite, fits only with kube-apiserver GOGC=50 and tight limits; (b) golden_path_apps flaky — recreated pods get only Audit results at admission, Deny policy pass results wait for the hourly background scan. Coder also added sigstore-python verification in dt-bridge (addresses T6), audit-log-based admission violation metrics, runtime-demo governed image with shell
+notes-m8b: GOGC workaround removed 6b0378c (Grafana alerting and default GOMEMLIMIT restored); fresh task up 839 s no intervention; kubectl top peak 10422 Mi (budget 12288)
 pr: none
 findings:
 - T1 pending — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
@@ -78,6 +79,7 @@ findings:
 - T6 pending — dt-bridge reads the CycloneDX attestation and SLSA provenance from Harbor referrers without verifying their Sigstore signatures (SBOM/base integrity trusted blindly)
 - T7 pending — local CA generated without keyUsage; dt-bridge relaxes Python VERIFY_X509_STRICT for the Harbor client (workaround) instead of ensure_ca emitting a compliant CA
 - T8 pending — Argo CD Applications dependency-track and kubescape have no resources-finalizer (pruning leaves DT workloads orphaned) and, like hello-java earlier, can sit without operationState so task up's convergence wait never completes until a manual sync
+- T9 pending — on a fresh cluster task demo:runtime-shell can exec before node-agent has loaded the just-completed runtime-demo profile (storage sqlite interrupted/key not found), so no alert on first run (runtime_alert + observability flaky once, green on rerun)
 demo:
 
 ## Milestones

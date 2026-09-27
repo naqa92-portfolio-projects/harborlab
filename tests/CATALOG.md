@@ -622,7 +622,11 @@ data model taken from upstream (`kubescape/kubevuln` `docs/VEX.md`, `repositorie
 - Where Kubescape publishes its OpenVEX: `OpenVulnerabilityExchangeContainer` objects, API
   `spdx.softwarecomposition.kubescape.io/v1beta1`, resource `openvulnerabilityexchangecontainers`, namespace
   `kubescape`, served by the Kubescape storage aggregated APIService `v1beta1.spdx.softwarecomposition.kubescape.io`
-  (`Available=True`; not a CRD). The relevancy document of a container instance (kubevuln `ScanCP` flow) is named
+  (`Available=True`; not a CRD). A list returns metadata only (`spec.statements: null`) unless the request carries
+  `resourceVersion=fullSpec` (kubescape/storage `pkg/registry/file/storage.go`, `GetList`); a single `get` returns
+  the full spec. The test and dt-bridge list with `kubectl get --raw
+  "/apis/spdx.softwarecomposition.kubescape.io/v1beta1/namespaces/kubescape/openvulnerabilityexchangecontainers?resourceVersion=fullSpec"`
+  (or its API equivalent), which the `list` verb covers. The relevancy document of a container instance (kubevuln `ScanCP` flow) is named
   after the instance-ID slug and carries the annotations `kubescape.io/instance-id`
   (`apiVersion-apps/v1/namespace-<ns>/kind-ReplicaSet/name-<replicaset>/containerName-<container>`),
   `kubescape.io/image-id` (the container's image ID, e.g. `harbor.127.0.0.1.nip.io/apps/hello-java@sha256:…`),

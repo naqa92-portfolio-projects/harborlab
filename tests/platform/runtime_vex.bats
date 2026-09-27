@@ -193,9 +193,13 @@ runtime_vex_problems() {
 }
 
 # The Kubescape VEX document of container instance $1 (JSON object, spec included) on stdout, or nothing.
+# The Kubescape storage lists metadata only (`spec.statements: null`) unless the list asks for
+# resourceVersion=fullSpec, which kubectl get cannot pass.
 instance_vex_document() {
   local list="$BATS_TEST_TMPDIR/vex-documents.json"
-  kubectl -n "$KUBESCAPE_NAMESPACE" get "$VEX_RESOURCE" -o json >"$list" 2>"$list.err" || {
+  kubectl get --raw \
+    "/apis/$KUBESCAPE_GROUP/v1beta1/namespaces/$KUBESCAPE_NAMESPACE/openvulnerabilityexchangecontainers?resourceVersion=fullSpec" \
+    >"$list" 2>"$list.err" || {
     echo '{"error": true}'
     return 0
   }

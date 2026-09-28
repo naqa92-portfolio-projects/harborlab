@@ -1,0 +1,74 @@
+# Observability backends accept only their clients: VictoriaLogs the log collector (insert), Grafana and
+# dt-bridge (queries); VictoriaMetrics Grafana; Grafana the Gateway. Kubelet probes come from the host.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: victoria-logs
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: victoria-logs
+  ingress:
+    - fromEntities:
+        - host
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/instance: victoria-logs-collector
+        - matchLabels:
+            app.kubernetes.io/instance: grafana
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: dt-bridge
+            app.kubernetes.io/name: dt-bridge
+      toPorts:
+        - ports:
+            - port: "9428"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: victoria-metrics
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: victoria-metrics
+  ingress:
+    - fromEntities:
+        - host
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/instance: grafana
+      toPorts:
+        - ports:
+            - port: "8428"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: grafana
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: grafana
+  ingress:
+    - fromEntities:
+        - host
+        - ingress
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+---
+# The collector serves nothing.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: victoria-logs-collector
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: victoria-logs-collector
+  ingress:
+    - fromEntities:
+        - host

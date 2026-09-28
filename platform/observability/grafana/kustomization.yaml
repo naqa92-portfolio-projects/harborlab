@@ -4,6 +4,7 @@ namespace: observability
 resources:
   - credentials.yaml
   - route.yaml
+  - network-policy.yaml
 # Mounted by the Grafana chart (dashboardsConfigMaps) under a fixed name.
 configMapGenerator:
   - name: grafana-dashboard-image-posture

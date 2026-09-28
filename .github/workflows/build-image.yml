@@ -148,14 +148,17 @@ jobs:
           devbox run -q -- trivy image --vex oci --show-suppressed --ignore-unfixed \
             --severity CRITICAL --exit-code 1 "$IMAGE@$DIGEST"
 
+      # Signing steps run only on the digest this job built; an existing image is verified below instead.
       - name: Generate CycloneDX and SPDX SBOMs
+        if: steps.existing.outputs.digest == ''
         env:
-          DIGEST: ${{ steps.digest.outputs.digest }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           devbox run -q -- syft scan "registry:$IMAGE@$DIGEST" \
             -o cyclonedx-json=sbom.cdx.json -o spdx-json=sbom.spdx.json
 
       - name: Write SLSA v1 provenance predicate
+        if: steps.existing.outputs.digest == ''
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
           BUILDER_ID: ${{ github.server_url }}/${{ github.workflow_ref }}
@@ -185,8 +188,9 @@ jobs:
             }' >provenance.json
 
       - name: Sign and attest
+        if: steps.existing.outputs.digest == ''
         env:
-          DIGEST: ${{ steps.digest.outputs.digest }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           ref="$IMAGE@$DIGEST"
           devbox run -q -- cosign sign --yes "$ref"
@@ -194,6 +198,7 @@ jobs:
           devbox run -q -- cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$ref"
           devbox run -q -- cosign attest --yes --type slsaprovenance1 --predicate provenance.json "$ref"
 
+      # Also the gate of an image found already published: signed by this workflow, same ref and commit.
       - name: Verify on GHCR
         env:
           DIGEST: ${{ steps.digest.outputs.digest }}

@@ -1,8 +1,8 @@
 name: build-image
 
 # Platform-owned image build: a caller only names the image and its build context. The Dockerfile's
-# final FROM, the image's base, must be digest-pinned; a dhi.io base has its DHI signature verified
-# before the build. Earlier stages are build-only and are not the base.
+# final FROM, the image's base, must be digest-pinned and be the base BuildKit actually used; a dhi.io
+# base has its DHI signature verified before the build. Earlier stages are build-only and are not the base.
 on:
   workflow_call:
     inputs:
@@ -115,6 +115,69 @@ jobs:
       - if: steps.existing.outputs.digest == ''
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # The base is what BuildKit used, not what the build file text says: a trial build records its
+      # materials; the base is the material whose layers begin the built image's layers.
+      - name: Resolve the base image with BuildKit
+        id: buildkit
+        if: steps.existing.outputs.digest == ''
+        run: |
+          meta="$RUNNER_TEMP/trial.json"
+          layout="$RUNNER_TEMP/trial"
+          docker buildx build --platform linux/amd64 --provenance=false --metadata-file "$meta" \
+            --output "type=oci,dest=$layout,tar=false" "$CONTEXT" >/dev/null
+          frontend="$(jq -r '.["buildx.build.provenance"].invocation.parameters.frontend // ""' "$meta")"
+          source="$(jq -r '.["buildx.build.provenance"].invocation.parameters.args.source // ""' "$meta")"
+          if [ "$frontend" != dockerfile.v0 ] &&
+            ! [[ "$frontend" == gateway.v0 && "$source" =~ $OFFICIAL_FRONTEND ]]; then
+            echo "::error::built with frontend '$frontend' '$source': only BuildKit's own frontend is allowed"
+            exit 1
+          fi
+          config="$(jq -r '.["containerimage.config.digest"]' "$meta")"
+          jq -c '.rootfs.diff_ids' "$layout/blobs/sha256/${config#sha256:}" >"$RUNNER_TEMP/layers.json"
+          best="" best_digest="" best_count=0
+          while IFS='|' read -r purl digest; do
+            path="${purl#pkg:docker/}"
+            path="${path%%\?*}"
+            name="${path%@*}"
+            tag=""
+            [ "$name" = "$path" ] || tag="${path##*@}"
+            first="${name%%/*}"
+            if [[ "$name" != */* ]]; then
+              name="docker.io/library/$name"
+            elif [[ "$first" != *.* && "$first" != *:* && "$first" != localhost ]]; then
+              name="docker.io/$name"
+            fi
+            layers="$(devbox run -q -- crane config --platform linux/amd64 "$name@sha256:$digest" | jq -c '.rootfs.diff_ids')"
+            count="$(jq -r --argjson base "$layers" 'if .[:($base | length)] == $base then $base | length else 0 end' \
+              "$RUNNER_TEMP/layers.json")"
+            if [ "$count" -gt "$best_count" ]; then
+              best="$name${tag:+:$tag}" best_digest="sha256:$digest" best_count="$count"
+            elif [ "$count" -gt 0 ] && [ "$count" -eq "$best_count" ] && [ "sha256:$digest" != "$best_digest" ]; then
+              echo "::error::materials $best@$best_digest and $name@sha256:$digest are equally the base"
+              exit 1
+            fi
+          done < <(jq -r '.["buildx.build.provenance"].materials[]?
+            | select((.uri | startswith("pkg:docker/")) and .digest.sha256 != null) | "\(.uri)|\(.digest.sha256)"' "$meta")
+          [ -n "$best" ] || { echo "::error::no BuildKit material is the base of the image"; exit 1; }
+          {
+            echo "name=$best"
+            echo "digest=$best_digest"
+          } >>"$GITHUB_OUTPUT"
+        env:
+          OFFICIAL_FRONTEND: ^(docker\.io/)?docker/dockerfile(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?$
+
+      - name: Check the BuildKit base is the pinned final FROM
+        if: steps.existing.outputs.digest == ''
+        env:
+          PINNED: ${{ steps.base.outputs.digest }}
+          USED: ${{ steps.buildkit.outputs.digest }}
+          USED_NAME: ${{ steps.buildkit.outputs.name }}
+        run: |
+          if [ "$PINNED" != "$USED" ]; then
+            echo "::error::BuildKit built on $USED_NAME@$USED, not on the pinned final FROM digest $PINNED"
+            exit 1
+          fi
+
       - id: build
         if: steps.existing.outputs.digest == ''
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -128,8 +191,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.base.name=${{ steps.base.outputs.name }}
-            org.opencontainers.image.base.digest=${{ steps.base.outputs.digest }}
+            org.opencontainers.image.base.name=${{ steps.buildkit.outputs.name }}
+            org.opencontainers.image.base.digest=${{ steps.buildkit.outputs.digest }}
 
       - name: Resolve the image digest
         id: digest
@@ -164,9 +227,14 @@ jobs:
           BUILDER_ID: ${{ github.server_url }}/${{ github.workflow_ref }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
-          BASE_NAME: ${{ steps.base.outputs.name }}
-          BASE_DIGEST: ${{ steps.base.outputs.digest }}
+          BUILD_METADATA: ${{ steps.build.outputs.metadata }}
+          BASE_NAME: ${{ steps.buildkit.outputs.name }}
+          BASE_DIGEST: ${{ steps.buildkit.outputs.digest }}
         run: |
+          # The published build used the same base as the trial build.
+          jq -e --arg digest "${BASE_DIGEST#sha256:}" \
+            'any(.["buildx.build.provenance"].materials[]?; .digest.sha256 == $digest)' <<<"$BUILD_METADATA" >/dev/null ||
+            { echo "::error::$BASE_NAME@$BASE_DIGEST is not a material of the published build"; exit 1; }
           jq -n \
             --arg builder "$BUILDER_ID" --arg run "$RUN_URL" --arg repo "$REPO_URL" \
             --arg ref "$GITHUB_REF" --arg sha "$GITHUB_SHA" --arg event "$EVENT_NAME" \

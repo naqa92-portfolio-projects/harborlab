@@ -6,6 +6,8 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GOLDEN_REFERENCE='^(ghcr\.io/naqa92-portfolio-projects/harborlab/golden|harbor\.127\.0\.0\.1\.nip\.io/golden)/([a-z0-9-]+)(:[^@/]+)?@(sha256:[0-9a-f]{64})$'
 PINNED_USES='^([^@[:space:]]+@[0-9a-f]{40}|\./.+|docker://[^@[:space:]]+@sha256:[0-9a-f]{64})$'
+# The only BuildKit frontend a `# syntax=` directive may name: a custom one decides the base itself.
+OFFICIAL_FRONTEND='^(docker\.io/)?docker/dockerfile(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?$'
 
 TARGET="$(cd "${1:-$REPO_ROOT}" 2>/dev/null && pwd)" || {
   echo "ERROR: ${1:-} is not a directory" >&2
@@ -73,7 +75,7 @@ check_kube_linter() {
 }
 
 # Every FROM (other than a reference to an earlier stage) is a digest-pinned golden image whose
-# (name, digest) is a supported entry of the target's catalog.
+# (name, digest) is a supported entry of the target's catalog, built by BuildKit's own frontend.
 check_from_golden() {
   local catalog="$TARGET/images/catalog.yaml" supported dockerfile from status=0 stages governed=()
   for dockerfile in "${DOCKERFILES[@]}"; do
@@ -85,6 +87,20 @@ check_from_golden() {
     return 1
   }
   for dockerfile in "${governed[@]}"; do
+    while IFS= read -r frontend; do
+      if [[ ! "$frontend" =~ $OFFICIAL_FRONTEND ]]; then
+        echo "$dockerfile: # syntax=$frontend names a custom BuildKit frontend"
+        status=1
+      fi
+    done < <(awk 'BEGIN { directives = 1 }
+      directives && /^#[[:space:]]*[A-Za-z]+[[:space:]]*=/ {
+        line = $0; sub(/^#[[:space:]]*/, "", line)
+        key = tolower(substr(line, 1, index(line, "=") - 1)); gsub(/[[:space:]]/, "", key)
+        value = substr(line, index(line, "=") + 1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        if (key == "syntax") print value
+        next
+      }
+      { directives = 0 }' "$TREE/$dockerfile")
     stages=" "
     while read -r from alias; do
       if [[ "$stages" == *" $from "* ]]; then

@@ -15,6 +15,11 @@ spec:
         apiVersions: [v1]
         operations: [CREATE, UPDATE]
         resources: [pods]
+      # kubectl debug adds containers through this subresource.
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [pods/ephemeralcontainers]
     namespaceSelector:
       matchLabels:
         harborlab.io/tier: workload

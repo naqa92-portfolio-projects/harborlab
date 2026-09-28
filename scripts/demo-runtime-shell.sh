@@ -14,7 +14,11 @@ VICTORIALOGS_QUERY=/api/v1/namespaces/observability/services/victoria-logs:http/
 # profile fetch is retried on node-agent's one-minute reconcile tick.
 PROFILE_LOADED_MESSAGE='adopted user-authored ContainerProfile as authoritative base'
 PROFILE_TIMEOUT_SECONDS=90
-ALERT_TIMEOUT_SECONDS=20
+# Criterion 20 budget: an alert within 2 minutes of the first shell. After the adoption log, node-agent's
+# rule manager binds the pod on its own backoff poll (up to ~1 s later, no info-level signal) and drops the
+# exec events before that: a shell left without alert is followed by a new shell process.
+ALERT_BUDGET_SECONDS=120
+SHELL_ALERT_WAIT_SECONDS=10
 POLL_SECONDS=2
 
 export KUBECONFIG="$REPO_ROOT/.kube/harborlab.yaml"
@@ -57,19 +61,30 @@ until profile_loaded "$container_id" "$started_at"; do
   sleep "$POLL_SECONDS"
 done
 
-exec_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-kubectl -n "$NAMESPACE" exec "$pod" -c "$CONTAINER" -- sh -c 'echo "shell ran in $HOSTNAME"'
-echo "runtime-shell target: $NAMESPACE/$pod/$CONTAINER"
-
-deadline=$((SECONDS + ALERT_TIMEOUT_SECONDS))
-while :; do
-  alert="$(node_agent_logs "$exec_time" | jq -r --arg ns "$NAMESPACE" --arg pod "$pod" --arg c "$CONTAINER" '
+# node-agent's R0001 alert on a shell of this container since $1, empty when none.
+shell_alert() {
+  node_agent_logs "$1" | jq -r --arg ns "$NAMESPACE" --arg pod "$pod" --arg c "$CONTAINER" '
     select(.RuleID == "R0001" and .RuntimeK8sDetails.namespace == $ns and .RuntimeK8sDetails.podName == $pod
       and .RuntimeK8sDetails.containerName == $c and .RuntimeProcessDetails.processTree.comm == "sh")
-    | "\(.BaseRuntimeMetadata.alertName): \(.RuntimeProcessDetails.processTree.cmdline)"' | head -n 1)"
-  [ -z "$alert" ] || break
-  [ "$SECONDS" -lt "$deadline" ] ||
-    die "Kubescape raised no alert for the shell in $NAMESPACE/$pod/$CONTAINER within ${ALERT_TIMEOUT_SECONDS}s"
-  sleep "$POLL_SECONDS"
+    | "\(.BaseRuntimeMetadata.alertName): \(.RuntimeProcessDetails.processTree.cmdline)"' | head -n 1
+}
+
+exec_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "runtime-shell target: $NAMESPACE/$pod/$CONTAINER"
+budget_end=$((SECONDS + ALERT_BUDGET_SECONDS))
+shells=0
+alert=""
+while [ -z "$alert" ]; do
+  [ "$SECONDS" -lt "$budget_end" ] ||
+    die "Kubescape raised no alert for $shells shell(s) in $NAMESPACE/$pod/$CONTAINER within ${ALERT_BUDGET_SECONDS}s"
+  [ "$shells" -eq 0 ] ||
+    echo "no alert ${SHELL_ALERT_WAIT_SECONDS}s after shell $shells (node-agent had not bound the pod yet): running a new shell"
+  shells=$((shells + 1))
+  kubectl -n "$NAMESPACE" exec "$pod" -c "$CONTAINER" -- sh -c 'echo "shell ran in $HOSTNAME"'
+  deadline=$((SECONDS + SHELL_ALERT_WAIT_SECONDS))
+  while [ -z "$alert" ] && [ "$SECONDS" -lt "$deadline" ]; do
+    sleep "$POLL_SECONDS"
+    alert="$(shell_alert "$exec_time")"
+  done
 done
 echo "runtime-shell alert: $alert"

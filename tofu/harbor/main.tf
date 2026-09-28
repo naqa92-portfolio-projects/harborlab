@@ -213,7 +213,7 @@ resource "harbor_immutable_tag_rule" "governed" {
   tag_excluding = "sha256-*"
 }
 
-# Tags of each pinned digest, read anonymously from the public governed projects. Retention selects
+# Tags of each pinned digest, read from the public governed projects. Retention selects
 # artifacts by tag only. A digest not replicated yet has no tag here: it is the newest artifact of its
 # repository, kept by the most-recent rule until `task harbor:configure` runs after its replication.
 data "http" "pinned_image" {
@@ -221,6 +221,9 @@ data "http" "pinned_image" {
 
   url             = "${local.harbor_url}/api/v2.0/projects/${each.value.project}/repositories/${replace(each.value.repository, "/", "%252F")}/artifacts/${each.value.digest}?with_tag=true"
   request_headers = { Accept = "application/json" }
+
+  # Anonymous reads need the public project, which the first apply creates.
+  depends_on = [harbor_project.governed]
 
   lifecycle {
     postcondition {

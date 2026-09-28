@@ -73,7 +73,7 @@ notes-m9: red d3b722b; M9 coder also fixes T9 (demo:runtime-shell runs once, no 
 resumed-m9: human (2026-09-28) chose catalogue A — genuine older golden versions (deprecated/eol) in images/catalog.yaml; tester adapts CAT-021 to multi-version catalog (running container required only for supported/deprecated). M9 coder 02128e9 3238658: docs 7/7 green; demo_scenarios 0/2 because demo:deprecated-base and demo:eol-base have no genuine deprecated/eol golden image — adding real older golden entries to images/catalog.yaml breaks observability.bats (CAT-021: yq select by name returns several digests; 'one running container per catalog image' impossible for an eol base) → human decision needed; the 7 other scenarios pass incl. negative control. M9 green not run yet; tester rework e3a7f05 (multi-version catalog in CAT-021/023/013); sequence: coder older golden versions + catalog + demo:vex fresh-cluster failure → tester demo fixtures → coder publish/replicate → green
 notes-m9b: coder 22ad6dc 6892f2b 49142fb 719b9af e9f4b0a — catalog python 3.13 supported, python 3.10 deprecated (tag 3.10-sha-6892f2b), java 21 supported, java 26 eol (genuine non-LTS EOL 2026-09-15, newer than 21: DHI python 3.9 not usable — debian13 401, debian12 fails Trivy CRITICAL); demo:vex root cause = single VEX worker behind replication bursts → 8 workers; policies.yml waits for Kyverno webhook before apply; tester fixtures 16e238a (demo-deprecated-base FROM python 3.10, demo-eol-base FROM java 26); coder next: publish/replicate/wire
 notes-m9c: coder fbc49f5 835a56f — demo_scenarios 2/2 (9 scenarios + negative control), docs 7/7; M9 green next, then pause before review
-review-started: human resumed (2026-09-28) — phase 3
+review-started: human resumed (2026-09-28) — phase 3; reviewer done (R1–R8, T1–T13 confirmed real), auditor next
 pr: none
 findings:
 - T1 pending — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
@@ -81,7 +81,7 @@ findings:
 - T3 pending — public-repo audit 2026-09-27: no ruleset / branch protection on main and prd-*; with T2 the signing identity is only as strong as who can push those refs (human action: ruleset protecting main + restricting prd-* creation)
 - T4 pending — after docker stop/start of the kind node, platform does not reconverge: kyverno-reports-controller CrashLoop (leader lease lost, client rate limiter deadline, 64-128Mi limits) and Argo CD keeps harbor/platform-config Degraded with all children Healthy; rebuilt with task down && task up
 - T5 fixed a028864 — fresh task up (M5 code): Kyverno admission/reports pods blocked ~12 min on FailedMount of ConfigMap kyverno-harborlab-ca (trust-manager Bundle target created late); bootstrap ordering between trust-manager Bundle and Kyverno (workloads now synced after Kyverno policies are ready; Kyverno still waits ~2.5 min on the CA ConfigMap)
-- T6 pending — dt-bridge reads the CycloneDX attestation and SLSA provenance from Harbor referrers without verifying their Sigstore signatures (SBOM/base integrity trusted blindly)
+- T6 superseded by R3 — — dt-bridge reads the CycloneDX attestation and SLSA provenance from Harbor referrers without verifying their Sigstore signatures (SBOM/base integrity trusted blindly)
 - T7 pending — local CA generated without keyUsage; dt-bridge relaxes Python VERIFY_X509_STRICT for the Harbor client (workaround) instead of ensure_ca emitting a compliant CA
 - T8 pending — Argo CD Applications dependency-track, kubescape and the six M8 ones have no resources-finalizer (pruning leaves DT workloads orphaned) and, like hello-java earlier, can sit without operationState so task up's convergence wait never completes until a manual sync
 - T9 pending — on a fresh cluster task demo:runtime-shell can exec before node-agent has loaded the just-completed runtime-demo profile (storage sqlite interrupted/key not found), so no alert on first run (runtime_alert + observability flaky on fresh/recreated profiles, reproduced at M8 green; also task demo:runtime-shell exited 124 when the recreated pod's profile was not completed within 120 s); M9 partial fix 3238658 (user-defined ContainerProfile + wait on node-agent 'adopted user-authored ContainerProfile' log + ignoreRuleBindings): 7/8 on recreated pods, residual ~1 s race with no info-level signal
@@ -89,6 +89,14 @@ findings:
 - T11 pending — Harbor retention keeps the 10 most recent artifacts per repository: future golden rebuilds can evict catalog-referenced older versions (python 3.10 deprecated, java 26 eol); retention should protect digests pinned in images/catalog.yaml
 - T12 pending — images/catalog.yaml pins the b9fdf90 golden builds while golden.yml has since published newer supported builds (6892f2b); no automation keeps the catalog in step (same gap as Renovate DHI bumps)
 - T13 pending — fixture `e2e` tags move on GHCR (each push rebuilds compliant with a new digest) while Harbor tags are immutable: replication apps-demo-fixtures-from-ghcr fails with 412 since 12:15; demo-admission.sh now tolerates the failed execution and checks the image itself (835a56f) — root cause (mutable tag) not fixed
+- R1 pending — workload policies miss pods/ephemeralcontainers: kubectl debug bypasses criterion 9 (verified live by dry-run)
+- R2 pending — public reusable build-image.yml callable by any repo: SAN equals trusted identity; bind caller repo (job guard + Kyverno keyless extensions + dt-bridge SanMatches)
+- R3 pending — dt-bridge webhook/Kubescape paths upload SBOM and read provenance without Sigstore verification; DHI OpenVEX not verified with DHI key (criterion 17 "verified provenance" not met) — supersedes T6
+- R4 pending — no docs/WORKAROUNDS.md registry for upstream workarounds with exit conditions
+- R5 pending — renovate.json lets DHI version bumps through for pinned lifecycle versions (3.10, 26, 21): restrict to digest updates
+- R6 pending — hello-java pom forces tomcat.version 11.0.26 untracked by Renovate
+- R7 pending — runtime-demo Application ignoreDifferences /spec on ContainerProfile: git changes never applied
+- R8 pending — README says task up converges a stopped node (false, T4)
 demo:
 
 ## Milestones

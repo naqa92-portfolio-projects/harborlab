@@ -36,6 +36,9 @@ permissions: {}
 jobs:
   build:
     name: Build, sign and attest
+    # In a reusable workflow github.repository is the caller: another repository calling this workflow
+    # would get certificates carrying this workflow's identity.
+    if: github.repository == 'naqa92-portfolio-projects/harborlab'
     runs-on: ubuntu-24.04
     permissions:
       contents: read

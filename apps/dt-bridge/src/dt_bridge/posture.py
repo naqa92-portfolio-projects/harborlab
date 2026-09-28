@@ -20,18 +20,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
-from cryptography.x509 import Certificate, SubjectAlternativeName, UniformResourceIdentifier
 from sigstore.errors import Error as SigstoreError
-from sigstore.errors import VerificationError
 from sigstore.models import Bundle
 from sigstore.verify import Verifier
-from sigstore.verify.policy import AllOf, OIDCIssuerV2
 
 from dt_bridge.dt_client import DependencyTrackClient, DependencyTrackError
 from dt_bridge.kubescape import IMAGE_ID_ANNOTATION, ImageReference, KubescapeError, image_reference
 from dt_bridge.pipeline import SLSA_PREDICATE_TYPE, Bridge, ImageRef, is_image_tag
 from dt_bridge.registry import RegistryError
 from dt_bridge.sbom import AttestationError, extract_cyclonedx_sbom, is_cyclonedx_predicate_type
+from dt_bridge.verification import Identities, signer_policy
 from dt_bridge.vex import VexConversionError, openvex_to_cyclonedx
 
 log = logging.getLogger(__name__)
@@ -183,27 +181,6 @@ class GovernedImage:
         return f"{self.project}/{self.repository}"
 
 
-@dataclass(frozen=True)
-class Identities:
-    """Signer identity (certificate SAN regexp) per Harbor project, and the OIDC issuer."""
-
-    issuer: str
-    by_project: dict[str, str]
-
-
-class SanMatches:
-    """Verification policy: a certificate URI SAN matches the regular expression."""
-
-    def __init__(self, pattern: str) -> None:
-        self._pattern = re.compile(pattern)
-
-    def verify(self, cert: Certificate) -> None:
-        extension = cert.extensions.get_extension_for_class(SubjectAlternativeName).value
-        sans = extension.get_values_for_type(UniformResourceIdentifier)
-        if not any(self._pattern.fullmatch(san) for san in sans):
-            raise VerificationError(f"no certificate SAN matches {self._pattern.pattern}")
-
-
 class SigstoreVerdicts:
     """Whether an image's cosign signature and its CycloneDX, SPDX and SLSA attestations verify, as
     `cosign verify` and `cosign verify-attestation` would: Sigstore public-good trust root, signer identity
@@ -213,10 +190,7 @@ class SigstoreVerdicts:
         # The public-good trust root shipped with sigstore-python: its TUF client would use the process's
         # default TLS trust, which holds only the local CA here (SSL_CERT_FILE).
         self._verifier = Verifier.production(offline=True)
-        self._policies = {
-            project: AllOf([OIDCIssuerV2(identities.issuer), SanMatches(pattern)])
-            for project, pattern in identities.by_project.items()
-        }
+        self._policies = {project: signer_policy(identities, project) for project in identities.by_project}
 
     def verdict(self, bridge: Bridge, image: GovernedImage) -> tuple[bool, bool]:
         """(signed, attested), each verified against the build identity of the image's project."""

@@ -7,7 +7,7 @@ trusts, per namespace tier, and the exceptions that trust relies on.
 
 | Asset | Threat | Control |
 |---|---|---|
-| Workload images | Unsigned, tampered or foreign-built image deployed | Kyverno `workload-image-signature`: keyless signature and CycloneDX, SPDX and SLSA v1 attestations signed by the `build-image.yml` workflow identity |
+| Workload images | Unsigned, tampered or foreign-built image deployed | Kyverno `workload-image-signature`: keyless signature and CycloneDX, SPDX and SLSA v1 attestations signed by the `build-image.yml` workflow identity, whose verified SLSA provenance names this repository as the caller (the reusable workflow signs with its own identity whoever calls it; its signing job also refuses to run for another repository) |
 | Golden bases | Image built on an unknown or end-of-life base | Kyverno `workload-golden-base`: the base digest recorded in the verified SLSA provenance must be `supported` or `deprecated` in `images/catalog.yaml` (deprecated warns) |
 | Registry path | Image pulled from outside the governed Harbor projects | Kyverno `workload-registry`: only `harbor.127.0.0.1.nip.io/golden/` and `/apps/` |
 | Traceability | Image without source, revision or owner | Kyverno `workload-image-labels`: required OCI and `io.harborlab.*` labels |

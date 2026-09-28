@@ -16,7 +16,6 @@ from dt_bridge.kubescape import IMAGE_ID_ANNOTATION, KubescapeError, VexDocument
 from dt_bridge.pipeline import Bridge, ImageRef, PendingVex, images_of_event
 from dt_bridge.posture import (
     HarborApi,
-    Identities,
     KubernetesApi,
     Posture,
     SigstoreVerdicts,
@@ -24,6 +23,7 @@ from dt_bridge.posture import (
 )
 from dt_bridge.registry import Registry, RegistryError
 from dt_bridge.sbom import AttestationError
+from dt_bridge.verification import Identities
 from dt_bridge.vex import VexConversionError
 
 # Bounds the work a burst of (possibly forged) webhook calls can queue; every job re-reads Harbor.
@@ -197,6 +197,7 @@ def build_posture(governed: set[str], kubescape_namespace: str | None) -> Postur
             "golden": required_env("SIGNER_IDENTITY_GOLDEN"),
             "apps": required_env("SIGNER_IDENTITY_APPS"),
         },
+        repository=required_env("SIGNER_REPOSITORY"),
     )
     return Posture(
         bridge,

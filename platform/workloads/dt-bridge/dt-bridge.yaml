@@ -145,6 +145,9 @@ spec:
               value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/(golden|build-image)\.yml@refs/heads/main
             - name: SIGNER_IDENTITY_APPS
               value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/main
+            # The repository the reusable build workflow must be called from (certificate source repository).
+            - name: SIGNER_REPOSITORY
+              value: naqa92-portfolio-projects/harborlab
             # The Sigstore trust root (TUF) is cached on the writable /tmp.
             - name: XDG_CACHE_HOME
               value: /tmp/cache

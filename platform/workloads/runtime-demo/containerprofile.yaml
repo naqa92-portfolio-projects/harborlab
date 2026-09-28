@@ -1,6 +1,8 @@
 # Authored Kubescape profile of the runtime-demo container, found by node-agent as <pod label
 # kubescape.io/user-defined-profile>-<container>: enforced from container start instead of a learned
-# one. Recorded from the container's learned profile; a shell is not part of it.
+# one. Recorded from the container's learned profile; a shell is not part of it. Argo CD cannot diff the
+# spec (storage lists profiles without it): harborlab.io/spec-sha256, the SHA-256 of `yq -o=json .spec |
+# jq -cS . | tr -d '\n'`, must change with the spec for a git change to sync.
 apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
 kind: ContainerProfile
 metadata:
@@ -8,6 +10,7 @@ metadata:
   namespace: runtime-demo
   annotations:
     kubescape.io/managed-by: User
+    harborlab.io/spec-sha256: "237a7d5576cb7581f1129353477dffe63a15e7e27a1b2f2891198d6fdf264471"
 spec:
   architectures:
     - amd64

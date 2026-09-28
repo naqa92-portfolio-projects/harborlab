@@ -50,7 +50,8 @@ jobs:
       IMAGE: ghcr.io/${{ github.repository }}/${{ inputs.image }}
       TAG: ${{ inputs.tag-prefix }}sha-${{ github.sha }}
       CONTEXT: ${{ inputs.context }}
-      DHI_PUBLIC_KEY: https://dhi.io/keyring/latest.pub
+      # DHI signing key, pinned: SPKI SHA-256 118ba556dd52f4aec67018efd316c285c783cd3e54cc0f4527605715c643887c.
+      DHI_PUBLIC_KEY: .github/keys/dhi.pub
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

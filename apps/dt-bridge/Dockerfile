@@ -1,5 +1,6 @@
-# Built and run on the golden python image, which has no shell: every RUN is in exec form. uv installs
-# the locked runtime dependencies into a virtual environment; the final stage runs it with `python -m`.
+# Built and run on the golden python image, which has no shell: every RUN is in exec form. uv, copied
+# from its digest-pinned image, installs the locked runtime dependencies into a virtual environment; the
+# final stage runs it with `python -m`.
 FROM ghcr.io/naqa92-portfolio-projects/harborlab/golden/python@sha256:44440011a75ee28d9bbf977929288e1d9f907a2bc17ab2a1c67cd0e1fc7ad696 AS build
 ENV UV_PROJECT_ENVIRONMENT=/tmp/venv \
     UV_CACHE_DIR=/tmp/uv-cache \
@@ -7,7 +8,7 @@ ENV UV_PROJECT_ENVIRONMENT=/tmp/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock /tmp/src/
-RUN ["python3", "-m", "pip", "install", "--no-cache-dir", "--target", "/tmp/uv", "uv==0.12.19"]
+COPY --from=ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 /uv /tmp/uv/bin/uv
 RUN ["/tmp/uv/bin/uv", "sync", "--project", "/tmp/src", "--frozen", "--no-dev"]
 
 FROM ghcr.io/naqa92-portfolio-projects/harborlab/golden/python@sha256:44440011a75ee28d9bbf977929288e1d9f907a2bc17ab2a1c67cd0e1fc7ad696

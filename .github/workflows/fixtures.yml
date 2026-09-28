@@ -1,6 +1,7 @@
 name: fixtures
 
-# Admission fixture images for kyverno test and Chainsaw, public on GHCR, each tagged `e2e`.
+# Admission fixture images for kyverno test, Chainsaw and the demos, public on GHCR, each tagged with the
+# immutable `sha-<commit>` and the moving `e2e`.
 on:
   push:
     branches:

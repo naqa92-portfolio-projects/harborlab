@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Publishes the admission fixtures under <prefix>/fixtures and <prefix>/offlist, tag `e2e`, from the
-# images build-image.yml pushed as `sha-<commit>`. Referrers live in the `sha256-<hex>` fallback tag
-# (GHCR has no referrers API), so each copy chooses which bundles it carries.
+# Publishes the admission fixtures under <prefix>/fixtures and <prefix>/offlist from the images
+# build-image.yml pushed as `sha-<commit>`: the copies get that immutable tag too, and every fixture the
+# moving `e2e` tag. Referrers live in the `sha256-<hex>` fallback tag (GHCR has no referrers API), so each
+# copy chooses which bundles it carries.
 set -euo pipefail
 
 PREFIX="${1:?usage: $0 <registry prefix, e.g. ghcr.io/owner/harborlab> <commit sha>}"
@@ -24,14 +25,17 @@ mapfile -t REFERRERS < <(crane manifest "$SOURCE:$REFERRERS_TAG" | jq -r '.manif
 
 # Same digest, no referrer at all.
 crane copy "$SOURCE@$DIGEST" "$PREFIX/fixtures/unsigned:e2e"
+crane tag "$PREFIX/fixtures/unsigned@$DIGEST" "sha-$SHA"
 
 # Same digest outside the workload allow-list, with every referrer.
 crane copy "$SOURCE@$DIGEST" "$PREFIX/offlist/compliant:e2e"
+crane tag "$PREFIX/offlist/compliant@$DIGEST" "sha-$SHA"
 crane copy "$SOURCE:$REFERRERS_TAG" "$PREFIX/offlist/compliant:$REFERRERS_TAG"
 
 # Same digest with the build-image.yml signature and SLSA provenance only.
 target="$PREFIX/fixtures/no-sbom"
 crane copy "$SOURCE@$DIGEST" "$target:e2e"
+crane tag "$target@$DIGEST" "sha-$SHA"
 kept=()
 for referrer in "${REFERRERS[@]}"; do
   type="$(crane manifest "$SOURCE@$referrer" | jq -r '.annotations["dev.sigstore.bundle.predicateType"] // ""')"
@@ -46,6 +50,7 @@ crane index append "${kept[@]}" --tag "$target:$REFERRERS_TAG"
 # Same digest signed and attested by the identity running this script, not by build-image.yml.
 target="$PREFIX/fixtures/foreign-signer"
 crane copy "$SOURCE@$DIGEST" "$target:e2e"
+crane tag "$target@$DIGEST" "sha-$SHA"
 if crane digest "$target:$REFERRERS_TAG" >/dev/null 2>&1; then
   echo "fixtures/foreign-signer@$DIGEST is already signed"
 else

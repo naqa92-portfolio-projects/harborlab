@@ -115,8 +115,6 @@ class HarborApi:
 
     def __init__(self, base_url: str, username: str, password: str, *, ca_file: str) -> None:
         context = ssl.create_default_context(cafile=ca_file)
-        # The local CA certificate has no keyUsage extension.
-        context.verify_flags &= ~ssl.VERIFY_X509_STRICT
         self._client = httpx.Client(
             base_url=base_url.rstrip("/") + "/api/v2.0",
             auth=(username, password),

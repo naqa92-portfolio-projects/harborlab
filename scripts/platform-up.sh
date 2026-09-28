@@ -48,16 +48,56 @@ die() {
   exit 1
 }
 
+# Strict X.509 clients (Python VERIFY_X509_STRICT) reject a CA without a critical keyUsage: a CA
+# generated before it carried one is replaced, and CA_REGENERATED tells task up to re-roll its consumers.
+CA_REGENERATED=false
 ensure_ca() {
   if [ -s "$CA_DIR/ca.crt" ] && [ -s "$CA_DIR/ca.key" ]; then
-    log "local CA already exists"
-    return
+    if openssl x509 -in "$CA_DIR/ca.crt" -noout -text | grep -A1 'X509v3 Key Usage: critical' |
+      grep -q 'Certificate Sign, CRL Sign'; then
+      log "local CA already exists"
+      return
+    fi
+    log "the local CA has no critical keyUsage keyCertSign, cRLSign: regenerating it"
+    CA_REGENERATED=true
   fi
   log "generating the local CA in $CA_DIR"
   (umask 077 && mkdir -p "$CA_DIR")
   (umask 077 && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
-    -subj "/CN=harborlab local CA" -keyout "$CA_DIR/ca.key" -out "$CA_DIR/ca.crt" 2>/dev/null)
+    -subj "/CN=harborlab local CA" \
+    -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+    -keyout "$CA_DIR/ca.key" -out "$CA_DIR/ca.crt" 2>/dev/null)
   chmod 600 "$CA_DIR/ca.key" "$CA_DIR/ca.crt"
+}
+
+# After a CA regeneration on an existing cluster: cert-manager gets the new key pair, re-issues the
+# certificates it signed, and the workloads that load the trust bundles at start are restarted.
+reroll_ca_consumers() {
+  [ "$CA_REGENERATED" = true ] || return 0
+  kubectl -n cert-manager get externalsecret harborlab-ca >/dev/null 2>&1 || return 0
+  log "re-rolling the consumers of the regenerated local CA"
+  kubectl -n cert-manager annotate externalsecret harborlab-ca --overwrite "force-sync=$(date +%s)" >/dev/null
+  local expected deadline=$((SECONDS + 120))
+  expected="$(base64 -w0 <"$CA_DIR/ca.crt")"
+  until [ "$(kubectl -n cert-manager get secret harborlab-ca -o jsonpath='{.data.tls\.crt}' 2>/dev/null)" = "$expected" ]; do
+    [ "$SECONDS" -lt "$deadline" ] || die "Secret cert-manager/harborlab-ca does not hold the regenerated CA after 120s"
+    sleep 5
+  done
+  kubectl get certificates.cert-manager.io -A -o json |
+    jq -r '.items[] | select(.spec.issuerRef.kind == "ClusterIssuer" and .spec.issuerRef.name == "harborlab-ca")
+      | "\(.metadata.namespace) \(.spec.secretName)"' |
+    while read -r namespace secret; do
+      kubectl -n "$namespace" delete secret "$secret" --ignore-not-found >/dev/null
+    done
+  sleep 30
+  kubectl get deployments,statefulsets,daemonsets -A -o json |
+    jq -r '.items[] | select(any(.spec.template.spec.volumes[]?;
+        (.configMap.name // "") | test("harborlab"))
+      or any(.spec.template.spec.volumes[]?.projected.sources[]?; (.configMap.name // "") | test("harborlab")))
+      | "\(.metadata.namespace) \(.kind | ascii_downcase)/\(.metadata.name)"' |
+    while read -r namespace workload; do
+      kubectl -n "$namespace" rollout restart "$workload" >/dev/null
+    done
 }
 
 ensure_cluster() {
@@ -467,6 +507,7 @@ ensure_cilium
 ensure_argocd
 ensure_root_application
 ensure_openbao
+reroll_ca_consumers
 seed_credentials
 # Before the first convergence: dt-bridge, a child of root, needs its Harbor robot and DT API key Secrets.
 "$REPO_ROOT/scripts/harbor-tofu.sh" seed

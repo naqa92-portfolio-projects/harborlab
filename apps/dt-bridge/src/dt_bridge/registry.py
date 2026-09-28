@@ -38,14 +38,11 @@ class Registry:
         password: str | None,
         *,
         ca_file: str,
-        relax_x509_strict: bool = False,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._auth = (username, password) if username and password else None
         context = ssl.create_default_context(cafile=ca_file)
-        if relax_x509_strict:
-            context.verify_flags &= ~ssl.VERIFY_X509_STRICT
         self._client = httpx.Client(
             timeout=TIMEOUT_SECONDS, transport=transport, follow_redirects=True, verify=context
         )

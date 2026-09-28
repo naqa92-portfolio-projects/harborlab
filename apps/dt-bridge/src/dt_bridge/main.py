@@ -76,14 +76,12 @@ def required_env(name: str) -> str:
 
 
 def build_bridge() -> Bridge:
-    # Harbor is served with the local CA only, whose certificate has no keyUsage extension: Python's strict
-    # X.509 checks are relaxed for that CA alone. dhi.io is served with a public CA.
+    # Harbor is served with the local CA, dhi.io with a public CA.
     harbor = Registry(
         required_env("HARBOR_URL"),
         required_env("HARBOR_USERNAME"),
         required_env("HARBOR_PASSWORD"),
         ca_file=required_env("HARBOR_CA_FILE"),
-        relax_x509_strict=True,
     )
     dhi = Registry(
         "https://dhi.io", os.environ.get("DHI_USERNAME"), os.environ.get("DHI_TOKEN"), ca_file=certifi.where()

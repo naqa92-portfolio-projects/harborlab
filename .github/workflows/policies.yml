@@ -23,6 +23,9 @@ concurrency:
 
 env:
   KYVERNO_CHART_VERSION: 3.9.1
+  # The fixtures are signed by build-image.yml on the branch under test: the policies trust it as the
+  # platform does when deployed from that branch (scripts/render-policies.sh).
+  HARBORLAB_REVISION: ${{ github.head_ref || github.ref_name }}
 
 jobs:
   kyverno-test:
@@ -63,8 +66,10 @@ jobs:
       - name: Apply the E2E params and the policies
         run: |
           devbox run -- kubectl apply -f tests/chainsaw/params
+          devbox run -- scripts/render-policies.sh "$HARBORLAB_REVISION" "$RUNNER_TEMP/rendered"
           for attempt in $(seq 1 30); do
-            devbox run -- kubectl apply -f policies/workload -f policies/platform && exit 0
+            devbox run -- kubectl apply -f "$RUNNER_TEMP/rendered/policies/workload" \
+              -f "$RUNNER_TEMP/rendered/policies/platform" && exit 0
             echo "attempt $attempt: Kyverno webhook not ready, retrying"
             sleep 10
           done

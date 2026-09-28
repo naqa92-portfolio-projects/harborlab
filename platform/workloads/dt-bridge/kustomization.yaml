@@ -1,0 +1,4 @@
+# Rendered by Argo CD, which patches the signer identities with the deployed platform revision.
+resources:
+  - credentials.yaml
+  - dt-bridge.yaml

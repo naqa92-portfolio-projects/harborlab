@@ -142,9 +142,9 @@ spec:
             - name: SIGNER_OIDC_ISSUER
               value: https://token.actions.githubusercontent.com
             - name: SIGNER_IDENTITY_GOLDEN
-              value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/(golden|build-image)\.yml@refs/heads/(main|prd-.+)
+              value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/(golden|build-image)\.yml@refs/heads/main
             - name: SIGNER_IDENTITY_APPS
-              value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/(main|prd-.+)
+              value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/main
             # The Sigstore trust root (TUF) is cached on the writable /tmp.
             - name: XDG_CACHE_HOME
               value: /tmp/cache

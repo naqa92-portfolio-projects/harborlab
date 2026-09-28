@@ -1,0 +1,13 @@
+# Rendered by Argo CD, which patches the build identities with the deployed platform revision.
+# No apiVersion/kind: this file is not a policy and must not be applied with the policies.
+resources:
+  - params/golden-images.yaml
+  - params/registries.yaml
+  - platform/registry-allow-list.yaml
+  - platform/vendor-signatures.yaml
+  - workload/golden-base-deprecated.yaml
+  - workload/golden-base.yaml
+  - workload/image-labels.yaml
+  - workload/image-signature.yaml
+  - workload/pod-security.yaml
+  - workload/registry.yaml

@@ -44,7 +44,7 @@ The exclusion is a documented, accepted risk:
 ## Keyless signing on public Rekor
 
 Images are signed keyless: GitHub Actions obtains a short-lived Fulcio certificate bound to the workflow
-identity (`build-image.yml` on this repository's `main` or `prd-*` branches), and every signature is
+identity (`build-image.yml` on this repository's `main` branch), and every signature is
 recorded in the public Rekor transparency log. There is no long-lived private key to steal or rotate,
 and the log makes every signing event auditable.
 
@@ -55,8 +55,22 @@ Trade-offs for a regulated environment such as a bank:
 - The transparency log publishes the signing identity, the repository and the image digest: acceptable
   for this public repository, not for confidential build metadata.
 - Trust is anchored in the GitHub OIDC issuer and the repository's branch protections: whoever can push
-  to a trusted branch can produce admissible images. Admission currently trusts `prd-*` branches too;
-  production should trust `main` only.
+  to a trusted branch can produce admissible images.
+
+## Environment-specific trust
+
+The policies and the `dt-bridge` signer identities committed in git trust `build-image.yml` run from
+`refs/heads/main` only. A platform deployed from another branch (`task up` on a checked-out branch, or
+`HARBORLAB_REVISION=<branch>`) must also admit the images that branch built before its merge, so it
+trusts exactly that one additional ref, and only in that environment:
+
+- `task up` passes the revision to the root Application (`revision` value of `platform/apps`); off
+  `main`, the Applications `kyverno-policies` and `dt-bridge` add a Kustomize patch whose identity is
+  `refs/heads/(main|<revision>)`, the revision regexp-quoted. Never a pattern such as `prd-.+`: another
+  branch of the repository stays untrusted.
+- The policy CI (`kyverno test`, Chainsaw) renders the policies the same way for the branch under test
+  with `scripts/render-policies.sh <revision> <out-dir>`, since its fixtures are signed on that branch.
+- A platform deployed from `main` renders the committed identities unchanged.
 
 The alternative for a bank is key-based signing with keys held in a KMS or HSM (cosign supports AWS KMS,
 GCP KMS, Azure Key Vault and HashiCorp Vault / OpenBao Transit through `--key <kms-uri>`), optionally with
@@ -71,7 +85,6 @@ Accepted or pending risks found while building the platform, with the control th
 | Finding | Risk | Mitigation |
 |---|---|---|
 | Keyless signing on the public Rekor instead of a KMS | Signing and admission depend on public Sigstore services; signing metadata is public | Documented above; a bank signs with a KMS/HSM key (`cosign --key <kms-uri>`) or a private Sigstore, and only the policies' attestor changes |
-| The workload signing identity accepts `prd-*` branches | `build-image.yml@refs/heads/(main\|prd-.+)`: any `prd-*` branch of this repository can sign admissible images, so pre-merge code reaches production admission | Production trusts `refs/heads/main` only; `prd-*` stays a development convenience |
 | Branch protection is a human setting | With the identity above, the chain of trust is only as strong as who can push to `main` or create `prd-*` branches; no ruleset is declared in this repository | A repository administrator adds a ruleset protecting `main` (reviews, status checks) and restricting the creation of `prd-*` branches |
 | `dt-bridge` trusts Harbor referrers for the SBOM it uploads | The CycloneDX attestation and SLSA provenance read from Harbor feed Dependency-Track and the DHI VEX lookup; a tampered referrer would mislead triage (not admission, which verifies signatures itself) | Verify the Sigstore bundles in `dt-bridge` against the build identity before use |
 | The local CA has no `keyUsage` extension | Strict X.509 clients reject it; `dt-bridge` relaxes Python's strict verification for Harbor | Emit a compliant CA certificate in `task up` and drop the relaxation |

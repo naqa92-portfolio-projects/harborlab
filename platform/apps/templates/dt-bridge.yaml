@@ -1,4 +1,5 @@
-# Golden-path application in its workload namespace; the image is its Harbor `apps` digest.
+# Golden-path application in its workload namespace; the image is its Harbor `apps` digest. Deployed from
+# another branch than main, the signer identities also trust that branch.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -14,5 +15,28 @@ spec:
     repoURL: {{ .Values.repoURL }}
     targetRevision: {{ .Values.revision }}
     path: platform/workloads/dt-bridge
+    {{- if ne .Values.revision "main" }}
+    kustomize:
+      patches:
+        - target:
+            kind: Deployment
+            name: dt-bridge
+          patch: |-
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: dt-bridge
+              namespace: dt-bridge
+            spec:
+              template:
+                spec:
+                  containers:
+                    - name: dt-bridge
+                      env:
+                        - name: SIGNER_IDENTITY_GOLDEN
+                          value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/(golden|build-image)\.yml@refs/heads/{{ include "harborlab.trustedRefs" . }}
+                        - name: SIGNER_IDENTITY_APPS
+                          value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/{{ include "harborlab.trustedRefs" . }}
+    {{- end }}
   syncPolicy:
     {{- toYaml .Values.syncPolicy | nindent 4 }}

@@ -38,6 +38,12 @@ spec:
     - repoURL: {{ .Values.repoURL }}
       targetRevision: {{ .Values.revision }}
       path: platform/observability/policy-reporter
+  # vendor-signatures (platform tier) rewrites the ghcr.io/kyverno image tags to their verified digest.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jqPathExpressions:
+        - .spec.template.spec.containers[].image
   syncPolicy:
     {{- toYaml .Values.syncPolicy | nindent 4 }}
     syncOptions:

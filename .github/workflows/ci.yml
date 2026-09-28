@@ -33,6 +33,11 @@ jobs:
 
       - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
 
+      # tests/ci/python_lint.bats runs dt-bridge's ruff through uv, same as dt-bridge-ci.yml.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+
       - name: tests/ci (excluding secrets.bats and repository_rules.bats) and tests/docs
         run: |
           files=$(find tests/ci tests/docs -maxdepth 1 -name '*.bats' \

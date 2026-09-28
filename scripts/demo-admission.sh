@@ -10,6 +10,7 @@ NAMESPACE="${2:?usage: $0 <scenario> <namespace>}"
 POD="demo-$SCENARIO"
 FIXTURES_REPLICATION=apps-demo-fixtures-from-ghcr
 FIXTURES_TAG="sha-$(yq -r '.commit' "$REPO_ROOT/images/demo-fixtures.yaml")"
+SCAN_TIMEOUT_SECONDS=600
 RUNTIME_DEMO=runtime-demo/runtime-demo
 # Docker Hub busybox 1.37.0, pinned so every run submits the same image.
 DOCKER_HUB_IMAGE=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
@@ -29,6 +30,17 @@ harbor_fixture() {
     harbor_api GET "/projects/apps/repositories/$1/artifacts/$FIXTURES_TAG"
   fi
   [ "$HTTP_CODE" = 200 ] || die "Harbor has no apps/$1:$FIXTURES_TAG (HTTP $HTTP_CODE)"
+  # Deployment security refuses to serve an `apps` image, to Kyverno too, until its scan has completed.
+  local status deadline=$((SECONDS + SCAN_TIMEOUT_SECONDS))
+  while :; do
+    harbor_api GET "/projects/apps/repositories/$1/artifacts/$FIXTURES_TAG?with_scan_overview=true"
+    status="$(jq -r '[.scan_overview[]?.scan_status] | first // "NotScanned"' "$WORK/body.json")"
+    [ "$status" != Success ] || break
+    case "$status" in Error | Stopped) die "Harbor scan of apps/$1:$FIXTURES_TAG ended $status" ;; esac
+    [ "$SECONDS" -lt "$deadline" ] || die "Harbor scan of apps/$1:$FIXTURES_TAG still $status after ${SCAN_TIMEOUT_SECONDS}s"
+    echo "demo:$SCENARIO: waiting for the Harbor scan of apps/$1:$FIXTURES_TAG ($status)" >&2
+    sleep 5
+  done
   echo "$HARBOR_HOST/apps/$1@$(jq -r .digest "$WORK/body.json")"
 }
 

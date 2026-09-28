@@ -30,3 +30,11 @@ metadata:
 spec:
   ca:
     secretName: harborlab-ca
+---
+# Identity of this namespace towards OpenBao (ClusterSecretStore openbao); no pod runs as it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-reader
+  namespace: cert-manager
+automountServiceAccountToken: false

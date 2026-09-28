@@ -26,6 +26,17 @@ WORKLOAD_APPLICATIONS='["dt-bridge", "hello-java", "runtime-demo"]'
 GOVERNED_REPLICATIONS=(golden-from-ghcr apps-from-ghcr apps-demo-from-ghcr)
 REPLICATION_TIMEOUT_SECONDS=900
 
+# External Secrets consumers: "<namespace>|<OpenBao KV paths under secret/ it may read>". Each namespace
+# authenticates as its own ServiceAccount openbao-reader and gets an OpenBao policy for these paths only.
+ESO_CONSUMERS=(
+  "cert-manager|platform/local-ca"
+  "harbor|platform/harbor-admin platform/harbor-db platform/harbor-registry platform/harbor-internal platform/harbor-token-service"
+  "dependency-track|platform/dependency-track-db"
+  "dt-bridge|platform/harbor-robot-dt-bridge platform/dependency-track-api-key platform/dhi"
+  "observability|platform/grafana-admin"
+  "registry-mirror-test|platform/dhi"
+)
+
 STABLE_SECONDS=60
 # Margin over STABLE_SECONDS so the stability check still holds when a caller re-reads it after exit.
 STABLE_MARGIN_SECONDS=5
@@ -254,16 +265,12 @@ ensure_openbao() {
     bao secrets list -format=json | grep -q "\"secret/\"" || bao secrets enable -path=secret -version=2 kv >/dev/null
     bao auth list -format=json | grep -q "\"kubernetes/\"" || bao auth enable kubernetes >/dev/null
     bao write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc:443 >/dev/null
-    printf "%s\n" "path \"secret/data/platform/*\" { capabilities = [\"read\"] }" \
+    printf "%s\n" "path \"secret/metadata/platform/*\" { capabilities = [\"read\"] }" \
       "path \"sys/mounts\" { capabilities = [\"read\"] }" >/tmp/platform-audit.hcl
     bao policy write platform-audit /tmp/platform-audit.hcl >/dev/null
-    printf "%s\n" "path \"secret/data/platform/*\" { capabilities = [\"read\"] }" >/tmp/external-secrets.hcl
-    bao policy write external-secrets /tmp/external-secrets.hcl >/dev/null
-    rm -f /tmp/platform-audit.hcl /tmp/external-secrets.hcl
+    rm -f /tmp/platform-audit.hcl
     bao write auth/kubernetes/role/platform-audit bound_service_account_names=platform-audit \
       bound_service_account_namespaces=openbao token_policies=platform-audit token_ttl=15m >/dev/null
-    bao write auth/kubernetes/role/external-secrets bound_service_account_names=openbao-reader \
-      bound_service_account_namespaces=external-secrets token_policies=external-secrets token_ttl=15m >/dev/null
     bao secrets list -format=json | grep -q "\"transit/\"" || bao secrets enable -path=transit transit >/dev/null
     bao read transit/keys/harbor-tofu-state >/dev/null 2>&1 || bao write -f transit/keys/harbor-tofu-state >/dev/null
     printf "%s\n" "path \"transit/datakey/plaintext/harbor-tofu-state\" { capabilities = [\"update\"] }" \
@@ -276,10 +283,40 @@ ensure_openbao() {
     bao write auth/kubernetes/role/harbor-tofu bound_service_account_names=harbor-tofu \
       bound_service_account_namespaces=openbao token_policies=harbor-tofu token_ttl=15m >/dev/null
   ' </dev/null
+  ensure_eso_access
 
   log "seeding the local CA into OpenBao secret/platform/local-ca"
   jq -n --rawfile crt "$CA_DIR/ca.crt" --rawfile key "$CA_DIR/ca.key" '{"tls.crt": $crt, "tls.key": $key}' |
     bao_root 'bao kv put -mount=secret platform/local-ca - >/dev/null'
+}
+
+# One OpenBao role for External Secrets, bound to the openbao-reader ServiceAccount of each consumer
+# namespace and granting nothing itself: the policy of a consumer, scoped to its exact paths, is carried by
+# the identity entity its ServiceAccount logs in as (entity alias "<namespace>/openbao-reader").
+ensure_eso_access() {
+  local accessor entry namespace paths path namespaces=""
+  accessor="$(bao_root 'bao auth list -format=json' </dev/null | jq -r '."kubernetes/".accessor')"
+  [ -n "$accessor" ] && [ "$accessor" != null ] || die "cannot read the accessor of the OpenBao kubernetes auth mount"
+  for entry in "${ESO_CONSUMERS[@]}"; do
+    IFS='|' read -r namespace paths <<<"$entry"
+    namespaces="${namespaces:+$namespaces,}$namespace"
+    for path in $paths; do
+      printf 'path "secret/data/%s" { capabilities = ["read"] }\n' "$path"
+    done | bao_root 'bao policy write "$1" - >/dev/null' "external-secrets-$namespace"
+    bao_root '
+      bao write identity/entity/name/external-secrets-"$1" policies=external-secrets-"$1" >/dev/null
+      id="$(bao read -field=id identity/entity/name/external-secrets-"$1")"
+      if [ -z "$(bao write -format=json identity/lookup/entity alias_name="$1/openbao-reader" alias_mount_accessor="$2")" ]; then
+        bao write identity/entity-alias name="$1/openbao-reader" canonical_id="$id" mount_accessor="$2" >/dev/null
+      fi
+    ' "$namespace" "$accessor" </dev/null
+  done
+  bao_root '
+    bao write auth/kubernetes/role/external-secrets bound_service_account_names=openbao-reader \
+      bound_service_account_namespaces="$1" alias_name_source=serviceaccount_name token_policies=default \
+      token_ttl=15m >/dev/null
+    bao policy delete external-secrets >/dev/null
+  ' "$namespaces" </dev/null
 }
 
 # Prints one alphanumeric random string per requested length, one per line.

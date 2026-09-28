@@ -42,6 +42,18 @@ spec:
           - group: ""
             kind: Secret
             name: wildcard-nip-io-tls
+      # Only the platform namespaces serving a UI attach routes: a tenant route on a platform host is
+      # refused (Accepted=False). The metadata.name label is set by the API server, not by the tenant.
       allowedRoutes:
         namespaces:
-          from: All
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - argocd
+                  - dependency-track
+                  - harbor
+                  - observability
+                  - policy-reporter

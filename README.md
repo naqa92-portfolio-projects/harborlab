@@ -50,6 +50,12 @@ with OpenTofu (`task harbor:configure`), replicates the golden and application i
 0 only after every Argo CD Application has been Synced and Healthy for 60 consecutive seconds. A fresh
 run takes about 15 minutes.
 
+The platform is not built to survive a stopped node: after `docker stop harborlab-control-plane`, a
+host reboot or a Docker restart, OpenBao comes back sealed and controllers such as the Kyverno reports
+controller or Argo CD may not reconverge on their own. Recover by rebuilding the cluster with
+`devbox run -- task down && devbox run -- task up` (`task down && task up`); the local CA in `.local/ca/`
+is kept, every other credential is generated anew.
+
 Web interfaces, all under the local CA generated in `.local/ca/` (import `ca.crt` in the browser):
 
 | Service | URL | Credentials |

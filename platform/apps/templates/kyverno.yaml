@@ -41,6 +41,13 @@ spec:
               mountPath: /etc/harborlab-ca
               readOnly: true
         reportsController:
+          # Under the chart's 128Mi limit it lost its leader lease and crash-looped after a node restart.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
           # Background reports of the policies matching kubectl debug's subresource.
           rbac:
             clusterRole:

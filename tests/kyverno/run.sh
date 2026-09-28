@@ -24,12 +24,19 @@ if [ "${#suites[@]}" -eq 0 ]; then
 fi
 [ "${#suites[@]}" -gt 0 ] || fail "no kyverno test suite under tests/kyverno"
 
+# The fixtures are signed by build-image.yml on the branch under test: the policies trust that revision as
+# the platform deployed from it does. CI sets HARBORLAB_REVISION; locally it is the checked-out branch.
+REVISION="${HARBORLAB_REVISION:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)}"
+[ -n "$REVISION" ] && [ "$REVISION" != HEAD ] ||
+  fail "cannot tell the revision the fixtures were signed on (detached HEAD): set HARBORLAB_REVISION"
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/tests"
 cp -R "$REPO_ROOT/tests/kyverno" "$WORK/tests/kyverno"
-# Suites name their policies relative to the repo root copy; a missing directory is reported by kyverno.
-[ ! -d "$REPO_ROOT/policies" ] || cp -R "$REPO_ROOT/policies" "$WORK/policies"
+# Suites name their policies relative to the repo root copy; a missing policy file is reported by kyverno.
+"$REPO_ROOT/scripts/render-policies.sh" "$REVISION" "$WORK" ||
+  fail "cannot render the policies for revision $REVISION"
 
 # Runs "$@", retrying with exponential backoff only while it fails with a registry rate-limit error.
 # A timeout (exit 124 or 137) or any other failure is returned at once; the last attempt's result stands.

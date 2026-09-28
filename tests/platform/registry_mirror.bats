@@ -9,6 +9,8 @@ HARBOR_HOST=harbor.127.0.0.1.nip.io
 HARBOR_NAMESPACE=harbor
 HARBOR_ADMIN_SECRET=harbor-admin
 TEST_NAMESPACE=registry-mirror-test
+# As the platform declares it: pods are denied in a namespace without a tier.
+TEST_NAMESPACE_TIER=harborlab.io/tier=platform
 # Harbor stores a proxied platform manifest 20-200 s after the pull and never guarantees a tag.
 CACHE_WAIT_SECONDS=240
 
@@ -40,6 +42,7 @@ setup_file() {
     >"$BATS_FILE_TMPDIR/harbor-ca.crt"
   [ -s "$BATS_FILE_TMPDIR/harbor-ca.crt" ] || fail "Secret gateway/wildcard-nip-io-tls has no ca.crt"
   kubectl create namespace "$TEST_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl label namespace "$TEST_NAMESPACE" --overwrite "$TEST_NAMESPACE_TIER" >/dev/null
 }
 
 setup() {

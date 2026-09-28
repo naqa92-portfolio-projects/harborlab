@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Demo scenarios, live: each `task demo:<scenario>` exits 0 when the platform reacts as docs/DEMO.md documents,
-# and an admission scenario run in a namespace without the workload label, where nothing reacts, exits non-zero.
+# and an admission scenario run in a platform-tier namespace, where no workload policy reacts, exits non-zero.
 
 bats_require_minimum_version 1.5.0
 
@@ -16,7 +16,9 @@ VEX_TIMEOUT_SECONDS=900
 # VictoriaLogs ingestion delay allowed after the task has returned; the alert itself must predate the return.
 ALERT_INGEST_SECONDS=60
 POLL_SECONDS=5
+# Platform tier: no workload policy applies there, and tier-required still admits its pods.
 CONTROL_NAMESPACE=harborlab-demo-control
+CONTROL_TIER_LABEL=harborlab.io/tier=platform
 GOLDEN_IMAGES_CONFIGMAP=golden-images
 KYVERNO_NAMESPACE=kyverno
 BUILD_IDENTITY='^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/(main|prd-.+)$'
@@ -315,6 +317,7 @@ check_vex() {
 @test "demo scenario exits non-zero when the platform does not react" {
   kubectl delete namespace "$CONTROL_NAMESPACE" --ignore-not-found --wait=true >/dev/null
   kubectl create namespace "$CONTROL_NAMESPACE" >/dev/null
+  kubectl label namespace "$CONTROL_NAMESPACE" "$CONTROL_TIER_LABEL" >/dev/null
   labels="$(kubectl get namespace "$CONTROL_NAMESPACE" -o json | jq -cS '.metadata.labels // {}')"
 
   for scenario in "${ADMISSION_SCENARIOS[@]}"; do

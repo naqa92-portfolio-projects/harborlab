@@ -139,3 +139,13 @@ wait_for_bundle_configmap() {
       fail "ConfigMap $namespace/$TRUST_BUNDLE exists in a namespace without $WORKLOAD_LABEL_KEY=$WORKLOAD_LABEL_VALUE"
   done
 }
+
+@test "the local CA certificate carries CA basic constraints and certificate signing key usage" {
+  # Public certificate only: strict X.509 clients (Python 3.13 VERIFY_X509_STRICT) require both extensions.
+  text="$(openssl x509 -in "$LOCAL_CA" -noout -text)"
+  grep -A1 'X509v3 Basic Constraints: critical' <<<"$text" | grep -q 'CA:TRUE' ||
+    fail "the local CA (Secret $CA_NAMESPACE/$CA_SECRET) has no critical basicConstraints CA:TRUE"
+  usage="$(grep -A1 'X509v3 Key Usage: critical' <<<"$text" | tail -n 1 || true)"
+  grep -q 'Certificate Sign' <<<"$usage" && grep -q 'CRL Sign' <<<"$usage" ||
+    fail "the local CA (Secret $CA_NAMESPACE/$CA_SECRET) has no critical keyUsage keyCertSign, cRLSign (got: ${usage:-none})"
+}

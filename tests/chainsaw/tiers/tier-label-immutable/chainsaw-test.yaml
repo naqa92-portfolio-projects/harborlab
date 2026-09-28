@@ -1,0 +1,71 @@
+# The tier label of a namespace is fixed for non-admins: a subject allowed by RBAC to patch namespaces
+# can change other labels but can neither remove harborlab.io/tier nor move the namespace out of the
+# workload tier.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: tiers-tier-label-immutable
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    cleanup: 60s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: a namespace editor that is not a cluster admin
+      try:
+        - script:
+            content: |
+              set -e
+              kubectl create serviceaccount -n "$NAMESPACE" tenant-admin
+              kubectl create clusterrole "harborlab-e2e-ns-editor-$NAMESPACE" --verb=get,list,watch,patch,update --resource=namespaces
+              kubectl create clusterrolebinding "harborlab-e2e-ns-editor-$NAMESPACE" \
+                --clusterrole="harborlab-e2e-ns-editor-$NAMESPACE" --serviceaccount="$NAMESPACE:tenant-admin"
+            check:
+              ($error == null): true
+      cleanup:
+        - script:
+            content: |
+              kubectl delete clusterrolebinding "harborlab-e2e-ns-editor-$NAMESPACE" --ignore-not-found
+              kubectl delete clusterrole "harborlab-e2e-ns-editor-$NAMESPACE" --ignore-not-found
+    - name: the editor can change another label (RBAC grants the patch)
+      try:
+        - script:
+            content: >-
+              kubectl label namespace "$NAMESPACE" harborlab.io/e2e-probe=ok --overwrite
+              --as="system:serviceaccount:$NAMESPACE:tenant-admin"
+            check:
+              ($error == null): true
+    - name: the editor cannot remove the tier label
+      try:
+        - script:
+            content: >-
+              kubectl label namespace "$NAMESPACE" harborlab.io/tier-
+              --as="system:serviceaccount:$NAMESPACE:tenant-admin"
+            check:
+              ($error != null): true
+              (contains($stderr, 'harborlab.io/tier')): true
+    - name: the editor cannot move the namespace to the platform tier
+      try:
+        - script:
+            content: >-
+              kubectl label namespace "$NAMESPACE" harborlab.io/tier=platform --overwrite
+              --as="system:serviceaccount:$NAMESPACE:tenant-admin"
+            check:
+              ($error != null): true
+              (contains($stderr, 'harborlab.io/tier')): true
+    - name: the namespace is still in the workload tier
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: ($namespace)
+                labels:
+                  harborlab.io/tier: workload

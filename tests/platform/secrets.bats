@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 # Platform credentials, live against the cluster started by `task up`.
-# Credential values are measured inside the OpenBao pod or through jq; they are never printed.
+# The audit role reads credential metadata only; values are measured through jq on their Kubernetes
+# Secret and never printed.
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 PLATFORM_KUBECONFIG="$REPO_ROOT/.kube/harborlab.yaml"
@@ -66,10 +67,12 @@ openbao_audit() {
     fail "OpenBao has no KV v2 engine mounted at secret/"
 
   for credential in "${PLATFORM_CREDENTIALS[@]}"; do
-    IFS='|' read -r path field _ _ <<<"$credential"
-    run openbao_audit 'bao kv get -mount=secret -field="$2" "$1" | tr -d "\n" | wc -c' "$path" "$field"
-    [ "$status" -eq 0 ] || fail "OpenBao secret/$path field $field is not readable by $AUDIT_ROLE"
-    [ "$output" -gt 0 ] || fail "OpenBao secret/$path field $field is empty"
+    IFS='|' read -r path _ _ _ <<<"$credential"
+    run openbao_audit 'bao kv metadata get -mount=secret -format=json "$1"' "$path"
+    [ "$status" -eq 0 ] || fail "OpenBao secret/$path metadata is not readable by $AUDIT_ROLE"
+    jq -e '.data.current_version as $v | $v > 0 and .data.versions[($v | tostring)].deletion_time == ""
+      and (.data.versions[($v | tostring)].destroyed | not)' <<<"$output" >/dev/null ||
+      fail "OpenBao secret/$path has no live current version: $(jq -c '.data | {current_version, versions}' <<<"$output")"
   done
 }
 

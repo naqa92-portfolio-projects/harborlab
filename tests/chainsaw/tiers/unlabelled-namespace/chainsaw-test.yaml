@@ -1,0 +1,33 @@
+# Enforcement is not opt-in: in a namespace without a harborlab.io/tier label (and not a bootstrap
+# namespace), a pod is denied, whatever its image; the denial names the missing label.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: tiers-unlabelled-namespace
+spec:
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: the test namespace carries no tier label
+      try:
+        - script:
+            content: kubectl get namespace "$NAMESPACE" -o jsonpath='{.metadata.labels.harborlab\.io/tier}'
+            check:
+              ($error == null): true
+              ($stdout == ''): true
+    - name: admission denies the pod
+      try:
+        - script:
+            content: kubectl apply -n "$NAMESPACE" -f pod.yaml
+            check:
+              ($error != null): true
+              (contains($stderr, 'harborlab.io/tier')): true
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: untiered

@@ -209,6 +209,37 @@ EOF
   assert_lint_fails_with from-golden "a Dockerfile FROM a golden image marked eol in the catalog"
 }
 
+@test "heredoc line spoofing a golden FROM fails the lint" {
+  fixture="$BATS_TEST_TMPDIR/heredoc-from"
+  make_clean_fixture "$fixture"
+  # The real base is Docker Hub python; the last line starting with FROM is heredoc content naming the
+  # supported golden image, which a line-oriented reader takes for the final FROM.
+  cat >"$fixture/apps/hello/Dockerfile" <<EOF
+FROM docker.io/library/python:3.13-slim
+COPY <<SPOOF /app/notes.txt
+FROM $GOLDEN_REPO/python:3.13@$SUPPORTED_DIGEST
+SPOOF
+COPY app.py /app/app.py
+USER 65532:65532
+CMD ["python", "/app/app.py"]
+EOF
+  commit_fixture "$fixture" "heredoc FROM spoof"
+  run_lint "$fixture"
+  assert_lint_fails_with from-golden "a Dockerfile on Docker Hub python whose heredoc carries a golden FROM line"
+}
+
+@test "syntax directive naming a custom frontend fails the lint" {
+  fixture="$BATS_TEST_TMPDIR/syntax-frontend"
+  make_clean_fixture "$fixture"
+  # A custom BuildKit frontend decides the base itself, whatever the FROM lines say.
+  sed -i "1i # syntax=ghcr.io/attacker-example/dockerfile-frontend:1" "$fixture/apps/hello/Dockerfile"
+  head -n 1 "$fixture/apps/hello/Dockerfile" | grep -q '^# syntax=ghcr.io/attacker-example/' ||
+    fail "fixture: the syntax directive was not written"
+  commit_fixture "$fixture" "custom frontend"
+  run_lint "$fixture"
+  assert_lint_fails_with from-golden "a Dockerfile whose # syntax= directive names a custom frontend"
+}
+
 @test "platform lint passes on the repository" {
   run bash -c 'cd "$1" && exec task lint' _ "$REPO_ROOT"
   [ "$status" -eq 0 ] || fail "task lint fails on the repository (exit $status):"$'\n'"$(tail -n 40 <<<"$output")"

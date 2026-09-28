@@ -58,9 +58,11 @@ jobs:
       - name: Create the kind cluster
         run: devbox run -- kind create cluster --name policies --wait 120s
 
+      # The reports controller reads pods/ephemeralcontainers, which the workload policies match.
       - name: Install Kyverno
         run: |
-          devbox run -- helm upgrade --install kyverno kyverno --repo https://kyverno.github.io/kyverno --version "$KYVERNO_CHART_VERSION" --namespace kyverno --create-namespace --wait --timeout 10m
+          devbox run -- helm upgrade --install kyverno kyverno --repo https://kyverno.github.io/kyverno --version "$KYVERNO_CHART_VERSION" --namespace kyverno --create-namespace --wait --timeout 10m \
+            --set-json 'reportsController.rbac.clusterRole.extraResources=[{"apiGroups":[""],"resources":["pods/ephemeralcontainers"],"verbs":["get","list","watch"]}]'
 
       # Helm's --wait returns before the Kyverno service answers its policy validation webhook: retried.
       - name: Apply the E2E params and the policies

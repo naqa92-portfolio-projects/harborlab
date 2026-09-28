@@ -39,6 +39,13 @@ spec:
               mountPath: /etc/harborlab-ca
               readOnly: true
         reportsController:
+          # Background reports of the policies matching kubectl debug's subresource.
+          rbac:
+            clusterRole:
+              extraResources:
+                - apiGroups: [""]
+                  resources: [pods/ephemeralcontainers]
+                  verbs: [get, list, watch]
           extraEnvVars:
             - name: SSL_CERT_DIR
               value: /etc/ssl/certs:/etc/harborlab-ca

@@ -28,6 +28,9 @@ from dt_bridge.vex import VexConversionError
 
 # Bounds the work a burst of (possibly forged) webhook calls can queue; every job re-reads Harbor.
 MAX_QUEUED_IMAGES = 200
+# A VEX job mostly waits on Dependency-Track (analysis, then up to FINDINGS_TIMEOUT_SECONDS for findings):
+# one worker drains a replication burst slower than the 15-minute replication schedule refills it.
+VEX_WORKERS = 8
 LOG_FIELDS = (
     "image",
     "tag",
@@ -225,7 +228,8 @@ async def lifespan(_: FastAPI):
     app.state.governed_projects = set(os.environ.get("GOVERNED_PROJECTS", "golden,apps").split(","))
     bridge = build_bridge()
     threading.Thread(target=sbom_worker, args=(bridge,), daemon=True, name="sbom-worker").start()
-    threading.Thread(target=vex_worker, args=(bridge,), daemon=True, name="vex-worker").start()
+    for index in range(VEX_WORKERS):
+        threading.Thread(target=vex_worker, args=(bridge,), daemon=True, name=f"vex-worker-{index}").start()
     kubescape_namespace = os.environ.get("KUBESCAPE_NAMESPACE")
     if kubescape_namespace:
         threading.Thread(

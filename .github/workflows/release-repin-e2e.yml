@@ -1,0 +1,45 @@
+name: release-repin-e2e
+
+# E2E catalog re-pin (R11): images/catalog.yaml's `supported` digests are the ones every golden catalog
+# PR moves, but the E2E fixture Dockerfiles (tests/fixtures/images/{compliant,missing-labels}) and the
+# Kyverno E2E params (tests/chainsaw/params/golden-images.yaml, tests/kyverno/workload/context.yaml) hold
+# their own copy, so `policies` CI keeps testing the digests admission actually enforces. Idempotent:
+# opens a pull request only when something changed, never pushes to main directly. Their fixture-only
+# deprecated/eol entries, absent from images/catalog.yaml, are left untouched.
+# See scripts/release-repin.sh e2e-params and .github/workflows/release-repin.yml (R10).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - images/catalog.yaml
+      - tests/fixtures/images/compliant/Dockerfile
+      - tests/fixtures/images/missing-labels/Dockerfile
+      - tests/chainsaw/params/golden-images.yaml
+      - tests/kyverno/workload/context.yaml
+      - scripts/release-repin.sh
+      - .github/workflows/release-repin-e2e.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-repin-e2e
+  cancel-in-progress: false
+
+jobs:
+  e2e-params:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - run: devbox run -q -- ./scripts/release-repin.sh e2e-params

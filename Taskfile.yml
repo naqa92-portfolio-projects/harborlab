@@ -58,12 +58,14 @@ tasks:
     desc: >-
       After merging to main: re-pin app Dockerfiles to the supported catalog digests, then
       platform/workloads and the demo fixtures commit to the images built at HEAD, in dependency order;
+      also re-pins the E2E fixture Dockerfiles and Kyverno E2E params to the supported catalog digests;
       opens a pull request per step that changed something (release-repin.yml runs the same steps
       automatically on the pushes that can need them)
     cmds:
       - ./scripts/release-repin.sh dockerfiles
       - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh workloads
       - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh fixtures
+      - ./scripts/release-repin.sh e2e-params
 
   demo:unsigned:
     desc: 'Submit a pod on an unsigned Harbor image; workload-image-signature denies it (NAMESPACE=<ns>)'

@@ -2,7 +2,7 @@
 # Post-merge re-pin (R10): after a merge to main, only build-image.yml@refs/heads/main is trusted (T2),
 # so every pin still carrying a prd-* build must be brought forward once main has rebuilt it. Idempotent:
 # each command opens a pull request only when something actually changed, and never pushes to main
-# directly. release-repin.yml runs the three commands, in this order, on the pushes that can need them;
+# directly. release-repin.yml runs the four commands, in this order, on the pushes that can need them;
 # `task release:repin` runs them for the current HEAD instead, for a manual run after a merge.
 #
 #   dockerfiles          re-pin the app Dockerfile FROM lines to the `supported` digests of
@@ -11,6 +11,9 @@
 #                        re-pin above) and re-pin platform/workloads/<name>/<name>.yaml to it
 #   fixtures [sha]       wait for fixtures/compliant:sha-<sha> (fixtures.yml) and re-pin
 #                        images/demo-fixtures.yaml's commit to it
+#   e2e-params           re-pin the E2E fixture Dockerfiles and the Kyverno E2E params (R11) to the
+#                        `supported` digests of images/catalog.yaml, leaving their fixture-only
+#                        deprecated/eol entries (absent from the catalog) untouched
 #
 # sha defaults to the current HEAD. workloads/fixtures wait up to RELEASE_REPIN_TIMEOUT seconds
 # (default 900) for the sibling build to publish, polling every RELEASE_REPIN_INTERVAL seconds
@@ -33,6 +36,16 @@ declare -A APP_GOLDEN=(
   [hello-java]=java
   [dt-bridge]=python
   [runtime-demo]=python
+)
+# E2E fixture Dockerfiles built on the supported golden python digest, and the files holding a
+# fixture-only copy of the golden-images Kyverno params (in images/catalog.yaml order: python, java).
+FIXTURE_DOCKERFILES=(
+  tests/fixtures/images/compliant/Dockerfile
+  tests/fixtures/images/missing-labels/Dockerfile
+)
+E2E_GOLDEN_FILES=(
+  tests/chainsaw/params/golden-images.yaml
+  tests/kyverno/workload/context.yaml
 )
 declare -A APP_WORKLOAD=(
   [hello-java]=platform/workloads/hello-java/hello-java.yaml
@@ -73,6 +86,21 @@ repin_digest() {
   [ -n "$old" ] || die "$1: no $pattern@sha256:... reference found"
   [ "$old" != "$new" ] || return 1
   sed -i "s|$pattern@$old|$pattern@$new|g" "$file"
+  git -C "$REPO_ROOT" add "$1"
+}
+
+# Replaces the digest of the $2-th (0-indexed) `sha256.<old>: supported` line of file $1 (in the file's
+# top-to-bottom order) with $3. Fixture-only deprecated/eol lines (absent from images/catalog.yaml) never
+# match "supported" and are left untouched. Stages the file and returns 0 (changed) when it differed.
+repin_supported_line() {
+  local file="$REPO_ROOT/$1" index="$2" new="$3" old
+  [[ "$new" =~ ^sha256:[0-9a-f]{64}$ ]] || die "'$new' is not a sha256:<64 lowercase hex> digest"
+  old="$(grep -oE 'sha256\.[0-9a-f]{64}: supported' "$file" | sed -n "$((index + 1))p" | grep -oE 'sha256\.[0-9a-f]{64}')"
+  [ -n "$old" ] || die "$1: no supported entry at index $index"
+  new="${new#sha256:}"
+  old="${old#sha256.}"
+  [ "$old" != "$new" ] || return 1
+  sed -i "s|sha256\.$old: supported|sha256.$new: supported|" "$file"
   git -C "$REPO_ROOT" add "$1"
 }
 
@@ -134,12 +162,36 @@ cmd_fixtures() {
     "Automated: fixtures.yml published the admission fixtures for commit $sha on main; re-pins images/demo-fixtures.yaml so \`task demo:*\` looks them up by that build."
 }
 
-[ "$#" -ge 1 ] || die "usage: $0 dockerfiles | workloads [sha] | fixtures [sha]"
+cmd_e2e_params() {
+  local python_digest file idx changed=0
+  [ -f "$CATALOG" ] || die "$CATALOG not found"
+  python_digest="$(yq -r '.images[] | select(.name == "python" and .status == "supported") | .digest' "$CATALOG")"
+  [ -n "$python_digest" ] || die "$CATALOG has no supported python entry"
+  for file in "${FIXTURE_DOCKERFILES[@]}"; do
+    if repin_digest "$file" "golden/python" "$python_digest"; then changed=1; fi
+  done
+
+  mapfile -t supported_digests < <(yq -r '.images[] | select(.status == "supported") | .digest' "$CATALOG")
+  [ "${#supported_digests[@]}" -ge 1 ] || die "$CATALOG has no supported entries"
+  for file in "${E2E_GOLDEN_FILES[@]}"; do
+    for idx in "${!supported_digests[@]}"; do
+      if repin_supported_line "$file" "$idx" "${supported_digests[$idx]}"; then changed=1; fi
+    done
+  done
+
+  [ "$changed" -eq 1 ] || { echo "E2E fixtures already pinned to the supported catalog digests"; return 0; }
+  open_repin_pr "release-repin-e2e-params-${GITHUB_RUN_ID:-$(date +%s)}" \
+    "chore(release): re-pin E2E fixtures to the supported golden digests" \
+    "Automated: images/catalog.yaml's \`supported\` digests moved; re-pins the E2E fixture Dockerfiles and the Kyverno E2E params (tests/chainsaw/params/golden-images.yaml, tests/kyverno/workload/context.yaml) so policies CI keeps testing the digests admission actually enforces. Fixture-only deprecated/eol entries, absent from the catalog, are left untouched."
+}
+
+[ "$#" -ge 1 ] || die "usage: $0 dockerfiles | workloads [sha] | fixtures [sha] | e2e-params"
 cmd="$1"
 shift
 case "$cmd" in
   dockerfiles) cmd_dockerfiles "$@" ;;
   workloads) cmd_workloads "${1:-}" ;;
   fixtures) cmd_fixtures "${1:-}" ;;
-  *) die "usage: $0 dockerfiles | workloads [sha] | fixtures [sha]" ;;
+  e2e-params) cmd_e2e_params "$@" ;;
+  *) die "usage: $0 dockerfiles | workloads [sha] | fixtures [sha] | e2e-params" ;;
 esac

@@ -7,7 +7,7 @@ name: release-repin
 # when something changed; never pushes to main directly. `workloads` and `fixtures` wait for the sibling
 # build their step depends on, but only on the push that could have triggered one, so an unrelated push
 # (e.g. images/catalog.yaml alone) returns immediately instead of waiting out its timeout for nothing.
-# See scripts/release-repin.sh and README "After merging".
+# See scripts/release-repin.sh, .github/workflows/release-repin-e2e.yml (R11) and README "After merging".
 on:
   push:
     branches:

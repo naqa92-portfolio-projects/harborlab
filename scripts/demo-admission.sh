@@ -30,9 +30,11 @@ harbor_fixture() {
   echo "$HARBOR_HOST/apps/$1@$(jq -r .digest "$WORK/body.json")"
 }
 
-# Scenario table: image, container command (JSON), run as root and the API server's denial text.
+# Scenario table: image, container command (JSON), run as root, expected reaction (deny or warn) and the
+# API server's text.
 COMMAND="$PAUSE_COMMAND"
 ROOT=false
+ACTION=deny
 case "$SCENARIO" in
   unsigned)
     IMAGE="$(harbor_fixture unsigned)"
@@ -60,8 +62,16 @@ case "$SCENARIO" in
     ROOT=true
     TEXT='violates PodSecurity "restricted:latest"'
     ;;
-  deprecated-base | eol-base)
-    die "no demo image is built on a ${SCENARIO%-base} golden image of images/catalog.yaml"
+  deprecated-base)
+    IMAGE="$(harbor_fixture demo-deprecated-base)"
+    ACTION=warn
+    TEXT='image base is a deprecated golden image'
+    ;;
+  eol-base)
+    # Golden runtimes have no shell: the java image runs its own entrypoint.
+    IMAGE="$(harbor_fixture demo-eol-base)"
+    COMMAND=null
+    TEXT='Policy workload-golden-base failed: image base is an end-of-life golden image'
     ;;
   *) die "unknown admission scenario '$SCENARIO'" ;;
 esac
@@ -94,8 +104,13 @@ cat "$WORK/answer.txt"
 exists=false
 kubectl -n "$NAMESPACE" get pod "$POD" -o name >/dev/null 2>&1 && exists=true
 
-if [ "$created" -ne 0 ] && [ "$exists" = false ] && grep -qF -- "$TEXT" "$WORK/answer.txt"; then
+if [ "$ACTION" = deny ] && [ "$created" -ne 0 ] && [ "$exists" = false ] && grep -qF -- "$TEXT" "$WORK/answer.txt"; then
   echo "demo:$SCENARIO: rejected by the platform as documented"
+  exit 0
+fi
+if [ "$ACTION" = warn ] && [ "$created" -eq 0 ] && [ "$exists" = true ] &&
+  grep -E '^Warning: ' "$WORK/answer.txt" | grep -F 'workload-golden-base-deprecated' | grep -qF -- "$TEXT"; then
+  echo "demo:$SCENARIO: admitted by the platform with the documented warning"
   exit 0
 fi
 echo "demo:$SCENARIO: the platform did not react as documented in docs/DEMO.md (pod created: $exists)" >&2

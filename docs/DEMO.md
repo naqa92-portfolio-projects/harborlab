@@ -56,8 +56,8 @@ The images of the Harbor-based scenarios are the admission fixtures of `tests/fi
 
 ### `demo:deprecated-base` — built on a deprecated golden image
 
-- Image: an application image built by `build-image.yml` on a golden image that `images/catalog.yaml`
-  marks `deprecated`.
+- Image: `harbor.127.0.0.1.nip.io/apps/demo-deprecated-base` — built by `build-image.yml` on the golden
+  python 3.10, which `images/catalog.yaml` marks `deprecated`.
 - Reaction: admitted with a warning. The API server answers with a `Warning:` line naming
   `workload-golden-base-deprecated` (`image base is a deprecated golden image`), the pod is created with
   its image rewritten to a Harbor digest, and its PolicyReport holds the `fail` result of that `Audit`/`Warn`
@@ -65,8 +65,8 @@ The images of the Harbor-based scenarios are the admission fixtures of `tests/fi
 
 ### `demo:eol-base` — built on an end-of-life golden image
 
-- Image: an application image built by `build-image.yml` on a golden image that `images/catalog.yaml`
-  marks `eol` (end-of-life).
+- Image: `harbor.127.0.0.1.nip.io/apps/demo-eol-base` — built by `build-image.yml` on the golden java 26,
+  which `images/catalog.yaml` marks `eol` (end-of-life).
 - Reaction: denied by `workload-golden-base`:
   `Policy workload-golden-base failed: image base is an end-of-life golden image`.
 

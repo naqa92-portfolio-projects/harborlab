@@ -27,7 +27,7 @@ locals {
 
   # Non-compliant admission fixtures the `task demo:*` scenarios submit from Harbor `apps`, where only
   # admission can reject them (flattened: fixtures/unsigned lands as apps/unsigned).
-  demo_fixtures_filter = "naqa92-portfolio-projects/harborlab/fixtures/{unsigned,foreign-signer,unknown-base}"
+  demo_fixtures_filter = "naqa92-portfolio-projects/harborlab/fixtures/{unsigned,foreign-signer,unknown-base,demo-deprecated-base,demo-eol-base}"
 
   # Harbor cron expressions carry a leading seconds field.
   replication_cron = "0 */15 * * * *"

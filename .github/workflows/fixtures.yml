@@ -23,7 +23,7 @@ jobs:
   build:
     strategy:
       matrix:
-        fixture: [compliant, missing-labels, deprecated-base, eol-base, unknown-base]
+        fixture: [compliant, missing-labels, deprecated-base, eol-base, unknown-base, demo-deprecated-base, demo-eol-base]
     permissions:
       contents: read
       packages: write

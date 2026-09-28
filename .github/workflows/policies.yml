@@ -59,10 +59,16 @@ jobs:
         run: |
           devbox run -- helm upgrade --install kyverno kyverno --repo https://kyverno.github.io/kyverno --version "$KYVERNO_CHART_VERSION" --namespace kyverno --create-namespace --wait --timeout 10m
 
+      # Helm's --wait returns before the Kyverno service answers its policy validation webhook: retried.
       - name: Apply the E2E params and the policies
         run: |
           devbox run -- kubectl apply -f tests/chainsaw/params
-          devbox run -- kubectl apply -f policies/workload -f policies/platform
+          for attempt in $(seq 1 30); do
+            devbox run -- kubectl apply -f policies/workload -f policies/platform && exit 0
+            echo "attempt $attempt: Kyverno webhook not ready, retrying"
+            sleep 10
+          done
+          exit 1
 
       - name: Wait for the policies to be ready
         run: |

@@ -53,9 +53,15 @@ spec:
         - ports:
             - port: "9428"
               protocol: TCP
-    # Harbor through the Gateway, and dhi.io.
+    # Harbor through the Gateway: its Envoy checks this egress policy against the backend, harbor-core,
+    # at L3 only (a port on this rule makes Envoy answer 403).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: harbor
+            app: harbor
+            component: core
+    # dhi.io and its token service.
     - toEntities:
-        - ingress
         - world
       toPorts:
         - ports:

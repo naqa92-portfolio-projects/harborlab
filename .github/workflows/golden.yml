@@ -45,3 +45,32 @@ jobs:
     secrets:
       DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
       DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+
+  # Older versions kept for the catalog lifecycle, tagged <version>-sha-<commit> in the same repository.
+  python-3-10:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: golden/python
+      context: images/golden/python/3.10
+      tag-prefix: 3.10-
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+
+  java-26:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: golden/java
+      context: images/golden/java/26
+      tag-prefix: 26-
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}

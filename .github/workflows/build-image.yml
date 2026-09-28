@@ -14,6 +14,11 @@ on:
         description: Build context directory holding the Dockerfile
         type: string
         required: true
+      tag-prefix:
+        description: Prefix of the sha-<commit> tag, e.g. 3.10- for an older version kept in the same repository
+        type: string
+        required: false
+        default: ''
     secrets:
       DHI_USERNAME:
         description: Docker account owning DHI_TOKEN, needed when the base image comes from dhi.io
@@ -40,7 +45,7 @@ jobs:
       digest: ${{ steps.digest.outputs.digest }}
     env:
       IMAGE: ghcr.io/${{ github.repository }}/${{ inputs.image }}
-      TAG: sha-${{ github.sha }}
+      TAG: ${{ inputs.tag-prefix }}sha-${{ github.sha }}
       CONTEXT: ${{ inputs.context }}
       DHI_PUBLIC_KEY: https://dhi.io/keyring/latest.pub
     steps:

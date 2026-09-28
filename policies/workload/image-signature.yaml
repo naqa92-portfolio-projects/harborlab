@@ -60,9 +60,6 @@ spec:
     - expression: >-
         variables.images.all(ref, verifyAttestationSignatures(ref, attestations.spdx, [attestors.build]) > 0)
       message: image has no SPDX SBOM attestation signed by the harborlab build-image workflow
-    - expression: >-
-        variables.images.all(ref, verifyAttestationSignatures(ref, attestations.slsa, [attestors.build]) > 0)
-      message: image has no SLSA provenance attestation signed by the harborlab build-image workflow
     # The reusable build-image.yml signs with its own identity whoever calls it: the verified provenance
     # names the calling repository, which must be this one.
     - expression: >-
@@ -70,4 +67,6 @@ spec:
           verifyAttestationSignatures(ref, attestations.slsa, [attestors.build]) > 0
             && extractPayload(ref, attestations.slsa).predicate.buildDefinition.externalParameters
               .?workflow.?repository.orValue("") == "https://github.com/naqa92-portfolio-projects/harborlab")
-      message: image SLSA provenance is not from a build of the naqa92-portfolio-projects/harborlab repository
+      message: >-
+        image has no SLSA provenance attestation signed by the harborlab build-image workflow for a build of
+        the naqa92-portfolio-projects/harborlab repository

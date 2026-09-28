@@ -550,7 +550,8 @@ seed_credentials
 # Before the first convergence: dt-bridge, a child of root, needs its Harbor robot and DT API key Secrets.
 "$REPO_ROOT/scripts/harbor-tofu.sh" seed
 ensure_dependency_track
-wait_for_convergence "$WORKLOAD_APPLICATIONS"
+# root aggregates the health of the workload Applications, which wait for the replication below.
+wait_for_convergence "$(jq -c '. + ["root"]' <<<"$WORKLOAD_APPLICATIONS")"
 "$REPO_ROOT/scripts/harbor-tofu.sh" configure
 replicate_governed_projects
 wait_for_convergence

@@ -20,10 +20,12 @@ demo_init
 kubectl get namespace "$NAMESPACE" -o name >/dev/null || die "namespace $NAMESPACE does not exist"
 
 # Digest reference of the admission fixture apps/$1:e2e in Harbor, replicated from GHCR when missing.
+# The execution fails as a whole when another fixture's immutable e2e tag moved on GHCR, even though
+# the missing one landed: the artifact lookup decides.
 harbor_fixture() {
   harbor_api GET "/projects/apps/repositories/$1/artifacts/e2e"
   if [ "$HTTP_CODE" = 404 ]; then
-    replicate "$FIXTURES_REPLICATION" >&2
+    (replicate "$FIXTURES_REPLICATION") >&2 || echo "demo:$SCENARIO: replication $FIXTURES_REPLICATION failed, looking up apps/$1 anyway" >&2
     harbor_api GET "/projects/apps/repositories/$1/artifacts/e2e"
   fi
   [ "$HTTP_CODE" = 200 ] || die "Harbor has no apps/$1:e2e (HTTP $HTTP_CODE)"

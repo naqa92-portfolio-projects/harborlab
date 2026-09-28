@@ -5,6 +5,7 @@ import queue
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import urlparse
 
 import certifi
@@ -75,6 +76,17 @@ def required_env(name: str) -> str:
     return value
 
 
+def signer_identities() -> Identities:
+    return Identities(
+        issuer=required_env("SIGNER_OIDC_ISSUER"),
+        by_project={
+            "golden": required_env("SIGNER_IDENTITY_GOLDEN"),
+            "apps": required_env("SIGNER_IDENTITY_APPS"),
+        },
+        repository=required_env("SIGNER_REPOSITORY"),
+    )
+
+
 def build_bridge() -> Bridge:
     # Harbor is served with the local CA, dhi.io with a public CA.
     harbor = Registry(
@@ -87,7 +99,13 @@ def build_bridge() -> Bridge:
         "https://dhi.io", os.environ.get("DHI_USERNAME"), os.environ.get("DHI_TOKEN"), ca_file=certifi.where()
     )
     dt = DependencyTrackClient(required_env("DT_URL"), required_env("DT_API_KEY"))
-    return Bridge(harbor, dt, dhi)
+    return Bridge(
+        harbor,
+        dt,
+        dhi,
+        identities=signer_identities(),
+        dhi_public_key=Path(required_env("DHI_PUBLIC_KEY_FILE")).read_bytes(),
+    )
 
 
 FORWARDING_ERRORS = (
@@ -189,14 +207,7 @@ def build_posture(governed: set[str], kubescape_namespace: str | None) -> Postur
         if kubescape_namespace
         else list
     )
-    identities = Identities(
-        issuer=required_env("SIGNER_OIDC_ISSUER"),
-        by_project={
-            "golden": required_env("SIGNER_IDENTITY_GOLDEN"),
-            "apps": required_env("SIGNER_IDENTITY_APPS"),
-        },
-        repository=required_env("SIGNER_REPOSITORY"),
-    )
+    identities = signer_identities()
     return Posture(
         bridge,
         bridge.dt,

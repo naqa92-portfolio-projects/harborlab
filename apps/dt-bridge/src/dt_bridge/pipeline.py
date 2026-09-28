@@ -1,6 +1,8 @@
 """From a Harbor image tag to Dependency-Track: the attested CycloneDX SBOM, then the DHI OpenVEX of its base.
 
-Everything is read from the registries; the Harbor event only names the image.
+Everything is read from the registries; the Harbor event only names the image. Attestations are used only
+once their Sigstore bundle verifies against the build identity, and the DHI OpenVEX once its cosign
+signature verifies against the DHI key.
 """
 
 import json
@@ -9,13 +11,17 @@ import time
 from dataclasses import dataclass
 from urllib.parse import unquote
 
+from sigstore.verify import Verifier
+
 from dt_bridge.dt_client import DependencyTrackClient
 from dt_bridge.registry import IMAGE_CONFIG_MEDIA_TYPES, INDEX_MEDIA_TYPES, Registry, RegistryError
-from dt_bridge.sbom import (
-    AttestationError,
-    extract_cyclonedx_sbom,
-    intoto_statement,
-    is_cyclonedx_predicate_type,
+from dt_bridge.sbom import AttestationError, is_cyclonedx_predicate_type
+from dt_bridge.verification import (
+    Identities,
+    cosign_signature_valid,
+    signer_policy,
+    statement_subjects,
+    verified_statement,
 )
 from dt_bridge.vex import openvex_to_cyclonedx
 
@@ -27,6 +33,8 @@ SLSA_PREDICATE_TYPE = "https://slsa.dev/provenance/v1"
 INTOTO_ARTIFACT_TYPE = "application/vnd.in-toto+json"
 INTOTO_PREDICATE_ANNOTATION = "in-toto.io/predicate-type"
 OPENVEX_PREDICATE_TYPE = "https://openvex.dev/ns/v0.2.0"
+COSIGN_SIGNATURE_ARTIFACT_TYPE = "application/vnd.dev.cosign.artifact.sig.v1+json"
+COSIGN_SIGNATURE_ANNOTATION = "dev.cosignproject.cosign/signature"
 DHI_REGISTRY = "dhi.io"
 ANALYSIS_TIMEOUT_SECONDS = 900
 FINDINGS_TIMEOUT_SECONDS = 120
@@ -66,10 +74,23 @@ class PendingVex:
 
 
 class Bridge:
-    def __init__(self, harbor: Registry, dt: DependencyTrackClient, dhi: Registry | None) -> None:
+    def __init__(
+        self,
+        harbor: Registry,
+        dt: DependencyTrackClient,
+        dhi: Registry | None,
+        *,
+        identities: Identities,
+        dhi_public_key: bytes,
+    ) -> None:
         self.harbor = harbor
         self.dt = dt
         self.dhi = dhi
+        # The public-good trust root shipped with sigstore-python: its TUF client would use the process's
+        # default TLS trust, which holds only the local CA here (SSL_CERT_FILE).
+        self._verifier = Verifier.production(offline=True)
+        self._policies = {project: signer_policy(identities, project) for project in identities.by_project}
+        self._dhi_public_key = dhi_public_key
 
     def _attestations(self, image: ImageRef, digest: str) -> dict[str, list[dict]]:
         by_type: dict[str, list[dict]] = {}
@@ -79,10 +100,34 @@ class Bridge:
                 by_type.setdefault(predicate_type, []).append(referrer)
         return by_type
 
-    def _bundle(self, image: ImageRef, referrers: list[dict]) -> bytes:
-        latest = max(referrers, key=lambda r: (r.get("annotations") or {}).get(CREATED_ANNOTATION, ""))
-        _, manifest = self.harbor.manifest(image.path, latest["digest"])
-        return self.harbor.blob(image.path, manifest["layers"][0]["digest"])
+    def _statement(self, image: ImageRef, digest: str, referrers: list[dict]) -> dict:
+        """The statement of the most recent referrer whose Sigstore bundle verifies against the build
+        identity of the image's project with `digest` as subject; AttestationError when none does."""
+        policy = self._policies.get(image.project)
+        if policy is None:
+            raise AttestationError(f"no signer identity for Harbor project {image.project}")
+        errors: list[str] = []
+        newest_first = sorted(
+            referrers, key=lambda r: (r.get("annotations") or {}).get(CREATED_ANNOTATION, ""), reverse=True
+        )
+        for referrer in newest_first:
+            _, manifest = self.harbor.manifest(image.path, referrer["digest"])
+            bundle = self.harbor.blob(image.path, manifest["layers"][0]["digest"])
+            try:
+                return verified_statement(self._verifier, bundle, policy, digest)
+            except AttestationError as error:
+                errors.append(str(error))
+        raise AttestationError(f"no attestation of {image.path}@{digest} verifies: {'; '.join(errors)}")
+
+    def _sbom(self, image: ImageRef, digest: str, referrers: list[dict]) -> dict:
+        statement = self._statement(image, digest, referrers)
+        predicate_type = statement.get("predicateType")
+        if not is_cyclonedx_predicate_type(predicate_type):
+            raise AttestationError(f"attestation predicateType is {predicate_type!r}, not a CycloneDX BOM")
+        predicate = statement.get("predicate")
+        if not isinstance(predicate, dict):
+            raise AttestationError("CycloneDX attestation has no predicate object")
+        return predicate
 
     def process(self, image: ImageRef) -> "PendingVex | None":
         """Uploads the attested SBOM; returns the DHI VEX to apply once Dependency-Track has analysed it."""
@@ -98,7 +143,8 @@ class Bridge:
         if not cyclonedx:
             log.warning("no CycloneDX attestation, skipped", extra={"image": image.path, "tag": image.tag})
             return None
-        sbom = extract_cyclonedx_sbom(self._bundle(image, cyclonedx))
+        sbom = self._sbom(image, digest, cyclonedx)
+        base = self._dhi_base(image, digest, attestations.get(SLSA_PREDICATE_TYPE, []))
         token = self.dt.upload_bom(image.path, image.tag, sbom)
         log.info(
             "SBOM uploaded",
@@ -111,7 +157,6 @@ class Bridge:
             },
         )
 
-        base = self._dhi_base(image, attestations.get(SLSA_PREDICATE_TYPE, []))
         if base is None or self.dhi is None:
             return None
         document = self._dhi_openvex(self.dhi, image, manifest, *base)
@@ -168,7 +213,7 @@ class Bridge:
         if not cyclonedx:
             log.warning("no CycloneDX attestation, Kubescape VEX skipped", extra=extra)
             return
-        sbom = extract_cyclonedx_sbom(self._bundle(image, cyclonedx))
+        sbom = self._sbom(image, digest, cyclonedx)
         if self.dt.project_uuid(image.path, image.tag) is None:
             token = self.dt.upload_bom(image.path, image.tag, sbom)
             log.info(
@@ -192,10 +237,10 @@ class Bridge:
             },
         )
 
-    def _dhi_base(self, image: ImageRef, provenances: list[dict]) -> tuple[str, str] | None:
+    def _dhi_base(self, image: ImageRef, digest: str, provenances: list[dict]) -> tuple[str, str] | None:
         if not provenances:
             return None
-        statement = intoto_statement(self._bundle(image, provenances))
+        statement = self._statement(image, digest, provenances)
         if statement.get("predicateType") != SLSA_PREDICATE_TYPE:
             raise AttestationError(f"provenance predicateType is {statement.get('predicateType')!r}")
         dependencies = (
@@ -242,11 +287,18 @@ class Bridge:
         for referrer in dhi.referrers(repository, platform_digest, INTOTO_ARTIFACT_TYPE):
             if (referrer.get("annotations") or {}).get(INTOTO_PREDICATE_ANNOTATION) != OPENVEX_PREDICATE_TYPE:
                 continue
-            _, attestation = dhi.manifest(repository, referrer["digest"])
+            attestation_digest, attestation = dhi.manifest(repository, referrer["digest"])
+            if not self._dhi_signed(dhi, repository, attestation_digest):
+                log.warning(
+                    "DHI OpenVEX attestation not signed by the DHI key, ignored",
+                    extra={"image": image.path, "dhi": f"{repository}@{attestation_digest}"},
+                )
+                continue
             statement = json.loads(dhi.blob(repository, attestation["layers"][0]["digest"]))
             document = (
                 statement.get("predicate")
                 if statement.get("predicateType") == OPENVEX_PREDICATE_TYPE
+                and platform_digest in statement_subjects(statement)
                 else None
             )
             if not isinstance(document, dict):
@@ -262,6 +314,21 @@ class Bridge:
             return None
         log.info("DHI OpenVEX fetched", extra={"image": image.path, "dhi": f"{repository}@{platform_digest}"})
         return best[1]
+
+    def _dhi_signed(self, dhi: Registry, repository: str, attestation_digest: str) -> bool:
+        """Whether a cosign simple-signing referrer of the attestation manifest is signed by the DHI key."""
+        for referrer in dhi.referrers(repository, attestation_digest, COSIGN_SIGNATURE_ARTIFACT_TYPE):
+            if referrer.get("artifactType") != COSIGN_SIGNATURE_ARTIFACT_TYPE:
+                continue
+            _, manifest = dhi.manifest(repository, referrer["digest"])
+            for layer in manifest.get("layers") or []:
+                signature = (layer.get("annotations") or {}).get(COSIGN_SIGNATURE_ANNOTATION)
+                if not signature:
+                    continue
+                payload = dhi.blob(repository, layer["digest"])
+                if cosign_signature_valid(self._dhi_public_key, payload, signature, attestation_digest):
+                    return True
+        return False
 
     def _wait_for_analysis(self, token: str) -> None:
         """Waits for the BOM processing, analysis included, so the VEX meets the findings it produced."""

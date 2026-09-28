@@ -148,6 +148,8 @@ spec:
             # The repository the reusable build workflow must be called from (certificate source repository).
             - name: SIGNER_REPOSITORY
               value: naqa92-portfolio-projects/harborlab
+            - name: DHI_PUBLIC_KEY_FILE
+              value: /etc/dhi/dhi.pub
             # The Sigstore trust root (TUF) is cached on the writable /tmp.
             - name: XDG_CACHE_HOME
               value: /tmp/cache
@@ -201,6 +203,9 @@ spec:
             - name: harborlab-trust
               mountPath: /etc/harborlab-trust
               readOnly: true
+            - name: dhi-public-key
+              mountPath: /etc/dhi
+              readOnly: true
             - name: tmp
               mountPath: /tmp
             - name: kube-api-access
@@ -210,6 +215,9 @@ spec:
         - name: harborlab-trust
           configMap:
             name: harborlab-trust
+        - name: dhi-public-key
+          configMap:
+            name: dhi-public-key
         - name: tmp
           emptyDir: {}
         # The ServiceAccount token, mounted in this container only.

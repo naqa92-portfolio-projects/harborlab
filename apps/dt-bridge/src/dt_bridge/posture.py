@@ -28,7 +28,7 @@ from dt_bridge.dt_client import DependencyTrackClient, DependencyTrackError
 from dt_bridge.kubescape import IMAGE_ID_ANNOTATION, ImageReference, KubescapeError, image_reference
 from dt_bridge.pipeline import SLSA_PREDICATE_TYPE, Bridge, ImageRef, is_image_tag
 from dt_bridge.registry import RegistryError
-from dt_bridge.sbom import AttestationError, extract_cyclonedx_sbom, is_cyclonedx_predicate_type
+from dt_bridge.sbom import AttestationError, is_cyclonedx_predicate_type
 from dt_bridge.verification import Identities, signer_policy
 from dt_bridge.vex import VexConversionError, openvex_to_cyclonedx
 
@@ -347,7 +347,7 @@ class Posture:
         ref = ImageRef(image.project, image.repository, tag)
         referrers = self._bridge._attestations(ref, image.digest)
         cyclonedx = [r for t, refs in referrers.items() if is_cyclonedx_predicate_type(t) for r in refs]
-        sbom = extract_cyclonedx_sbom(self._bridge._bundle(ref, cyclonedx)) if cyclonedx else None
+        sbom = self._bridge._sbom(ref, image.digest, cyclonedx) if cyclonedx else None
         return ref, sbom
 
     def _vex_documents(self, image: GovernedImage, ref: ImageRef, running: bool) -> list[dict]:
@@ -355,7 +355,7 @@ class Posture:
         Kubescape runtime OpenVEX documents."""
         documents = []
         provenances = self._bridge._attestations(ref, image.digest).get(SLSA_PREDICATE_TYPE, [])
-        base = self._bridge._dhi_base(ref, provenances)
+        base = self._bridge._dhi_base(ref, image.digest, provenances)
         if base is not None and self._bridge.dhi is not None:
             _, manifest = self._bridge.harbor.manifest(image.path, image.digest)
             document = self._bridge._dhi_openvex(self._bridge.dhi, ref, manifest, *base)

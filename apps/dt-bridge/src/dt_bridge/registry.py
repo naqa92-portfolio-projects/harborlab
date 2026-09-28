@@ -1,5 +1,6 @@
 """Read-only OCI distribution client (manifests, referrers, blobs) with the registry token flow."""
 
+import hashlib
 import re
 import ssl
 
@@ -83,9 +84,12 @@ class Registry:
         return response
 
     def manifest(self, repository: str, reference: str) -> tuple[str, dict]:
-        """Returns the digest and the manifest of a tag or digest."""
+        """Returns the digest and the manifest of a tag or digest; the digest is computed from the bytes
+        served, and a manifest fetched by digest must hash to it."""
         response = self._get(repository, f"manifests/{reference}", headers={"Accept": MANIFEST_MEDIA_TYPES})
-        digest = response.headers.get("docker-content-digest") or reference
+        digest = "sha256:" + hashlib.sha256(response.content).hexdigest()
+        if reference.startswith("sha256:") and reference != digest:
+            raise RegistryError(f"manifest {repository}@{reference} served content of digest {digest}")
         return digest, response.json()
 
     def referrers(self, repository: str, digest: str, artifact_type: str | None = None) -> list[dict]:
@@ -102,4 +106,7 @@ class Registry:
         return self._get(repository, "tags/list").json().get("tags") or []
 
     def blob(self, repository: str, digest: str) -> bytes:
-        return self._get(repository, f"blobs/{digest}").content
+        content = self._get(repository, f"blobs/{digest}").content
+        if digest.startswith("sha256:") and "sha256:" + hashlib.sha256(content).hexdigest() != digest:
+            raise RegistryError(f"blob {repository}@{digest} does not match its digest")
+        return content

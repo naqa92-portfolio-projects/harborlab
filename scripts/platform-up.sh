@@ -372,6 +372,23 @@ seed_credentials() {
   fi
 }
 
+# An Application created on resources already in their desired state is Synced and Healthy without Argo CD
+# ever running a sync, so it has no operationState proving that its revision syncs (hooks, waves, prune):
+# requests that sync, as `argocd app sync` does, through the Application's operation field.
+sync_never_operated() {
+  local excluded="$1" namespace name
+  jq -r --argjson excluded "$excluded" '.items[]
+    | select(.metadata.name as $name | $excluded | index($name) | not)
+    | select(.status.sync.status == "Synced" and .status.health.status == "Healthy"
+        and .status.operationState == null and .operation == null)
+    | "\(.metadata.namespace) \(.metadata.name)"' "$WORK/applications.json" |
+    while read -r namespace name; do
+      log "requesting a first sync of Application $name, which Argo CD never operated"
+      kubectl -n "$namespace" patch applications.argoproj.io "$name" --type merge \
+        -p '{"operation":{"initiatedBy":{"username":"task-up"},"sync":{"prune":true,"syncStrategy":{"hook":{}}}}}' >/dev/null
+    done
+}
+
 # Exits once every Application, except those named in the JSON array $1, has been Synced and Healthy,
 # with a succeeded last sync, for STABLE_SECONDS; the timestamps are the ones Argo CD persists.
 wait_for_convergence() {
@@ -380,6 +397,7 @@ wait_for_convergence() {
   local deadline=$((SECONDS + CONVERGE_TIMEOUT_SECONDS)) next_report=$((SECONDS + 60)) pending
   while :; do
     if kubectl get applications.argoproj.io -A -o json >"$WORK/applications.json" 2>/dev/null; then
+      sync_never_operated "$excluded"
       pending="$(jq -r --argjson now "$(date -u +%s)" --argjson age "$((STABLE_SECONDS + STABLE_MARGIN_SECONDS))" \
         --argjson excluded "$excluded" '
         if (.items | length) == 0 then "no Application yet" else

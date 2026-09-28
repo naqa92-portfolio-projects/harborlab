@@ -182,10 +182,14 @@ version_at_least() {
   jq -e '.kind == "ConfigMap" and .metadata.name == "harborlab-registries" and .metadata.namespace == "kyverno"' \
     <<<"$prod_registries" >/dev/null || fail "$PROD_REGISTRY_PARAMS is not the ConfigMap kyverno/harborlab-registries"
 
-  # Golden catalog: production entries unchanged, extra entries fixture-only, deprecated or eol.
+  # Golden catalog: every supported production entry present, no production entry changed (production deprecated
+  # or eol versions may be left out: the E2E cases use their own fixture bases), extra entries fixture-only,
+  # deprecated or eol.
   jq -en --argjson prod "$prod_golden" --argjson e2e "$e2e_golden" \
-    '($prod.data | length > 0) and ($prod.data | to_entries | all(.value == ($e2e.data[.key] // null)))' >/dev/null ||
-    fail "$E2E_GOLDEN_PARAMS drops or changes an entry of $PROD_GOLDEN_PARAMS"
+    '($prod.data | to_entries | map(select(.key | startswith("sha256."))) | any(.value == "supported"))
+      and ($prod.data | to_entries | all(.key as $k | .value as $v | ($e2e.data[$k] // null) as $e
+        | if $v == "supported" then $e == $v else $e == null or $e == $v end))' >/dev/null ||
+    fail "$E2E_GOLDEN_PARAMS drops a supported entry or changes an entry of $PROD_GOLDEN_PARAMS"
   catalog_keys="$(yq -o=json '[.images[].digest | "sha256." + sub("^sha256:"; "")]' "$REPO_ROOT/$CATALOG")"
   extra="$(jq -c --argjson prod "$prod_golden" '.data | with_entries(.key as $k | select(($prod.data | has($k)) | not))' <<<"$e2e_golden")"
   jq -e --argjson catalog "$catalog_keys" 'keys | all(. as $k | $catalog | index($k) == null)' <<<"$extra" >/dev/null ||

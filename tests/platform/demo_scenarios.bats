@@ -20,6 +20,8 @@ CONTROL_NAMESPACE=harborlab-demo-control
 GOLDEN_IMAGES_CONFIGMAP=golden-images
 KYVERNO_NAMESPACE=kyverno
 BUILD_IDENTITY='^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/(main|prd-.+)$'
+GOLDEN_IDENTITY='^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/(golden|build-image)\.yml@refs/heads/(main|prd-.+)$'
+CATALOG=images/catalog.yaml
 HARBOR_WORKLOAD_RE='^harbor\.127\.0\.0\.1\.nip\.io/(golden|apps)/'
 DOCKER_HUB_HOSTS_RE='^(docker\.io|index\.docker\.io|registry-1\.docker\.io)$'
 RUNTIME_TARGET_RE='^runtime-shell target: ([a-z0-9-]+)/([a-z0-9.-]+)/([a-z0-9-]+)$'
@@ -96,23 +98,51 @@ image_host() {
   fi
 }
 
-# Status of the base recorded in the SLSA provenance of $1 (verified against the build identity) in the live
-# ConfigMap kyverno/golden-images: supported, deprecated, eol or absent. Fails when the provenance does not verify.
+# Sets BASE_DIGEST to the base recorded in the SLSA provenance of $1 (verified against the build identity) and
+# BASE_STATUS to its status in the live ConfigMap kyverno/golden-images: supported, deprecated, eol or absent.
+# Fails when the provenance does not verify or does not name exactly one oci:// base.
 base_status() {
   local provenance="$BATS_TEST_TMPDIR/provenance.json" hex
+  BASE_DIGEST="" BASE_STATUS=""
   cosign verify-attestation --certificate-oidc-issuer "$OIDC_ISSUER" --certificate-identity-regexp "$BUILD_IDENTITY" \
     --type slsaprovenance1 --registry-cacert "$PLATFORM_CA" "$1" >"$provenance" 2>/dev/null || return 1
   hex="$(attestation_statements "$provenance" | jq -r '[.[].predicate.buildDefinition.resolvedDependencies[]?
       | select((.uri // "") | startswith("oci://")) | .digest.sha256 // empty] | unique
       | if length == 1 then .[0] else "" end')"
   [[ "$hex" =~ ^[0-9a-f]{64}$ ]] || return 1
-  kubectl -n "$KYVERNO_NAMESPACE" get configmap "$GOLDEN_IMAGES_CONFIGMAP" -o json |
-    jq -r --arg k "sha256.$hex" '.data[$k] // "absent"'
+  BASE_DIGEST="sha256:$hex"
+  BASE_STATUS="$(kubectl -n "$KYVERNO_NAMESPACE" get configmap "$GOLDEN_IMAGES_CONFIGMAP" -o json |
+    jq -r --arg k "sha256.$hex" '.data[$k] // "absent"')"
+}
+
+# The base BASE_DIGEST of demo:$1 is a genuine older golden build, not a stand-in: an images/catalog.yaml entry of
+# status $2 whose golden image on GHCR is signed by the golden build identity and built on one dhi.io base.
+check_genuine_golden_base() {
+  local scenario="$1" expected="$2" provenance="$BATS_TEST_TMPDIR/golden-provenance.json" name version status ref dhi
+  IFS='|' read -r name version status < <(yq -r ".images[] | select(.digest == \"$BASE_DIGEST\")
+    | [.name, .version, .status] | join(\"|\")" "$REPO_ROOT/$CATALOG" | head -n 1) || true
+  if [ "${status:-}" != "$expected" ]; then
+    problem "demo:$scenario is built on $BASE_DIGEST, which is '${status:-absent}' in $CATALOG, not a $expected entry"
+    return 0
+  fi
+  ref="$GHCR_GOLDEN/$name@$BASE_DIGEST"
+  cosign verify --certificate-oidc-issuer "$OIDC_ISSUER" --certificate-identity-regexp "$GOLDEN_IDENTITY" \
+    "$ref" >/dev/null 2>&1 ||
+    problem "demo:$scenario base $ref ($name $version, $expected) is not signed by the golden build identity"
+  if cosign verify-attestation --certificate-oidc-issuer "$OIDC_ISSUER" --certificate-identity-regexp "$GOLDEN_IDENTITY" \
+    --type slsaprovenance1 "$ref" >"$provenance" 2>/dev/null; then
+    dhi="$(attestation_statements "$provenance" | jq -r '[.[].predicate.buildDefinition.resolvedDependencies[]?
+      | select((.uri // "") | startswith("oci://dhi.io/")) | .digest.sha256 // empty] | unique | length')"
+    [ "$dhi" = 1 ] ||
+      problem "demo:$scenario base $ref ($name $version) records $dhi dhi.io base(s) in its SLSA provenance, expected one"
+  else
+    problem "demo:$scenario base $ref ($name $version) has no SLSA provenance verified against the golden build identity"
+  fi
 }
 
 # Checks one admission scenario run (bats `output`/`status` of run_task) against the platform's reaction.
 check_admission_scenario() {
-  local scenario="$1" line namespace pod image host status_of_base
+  local scenario="$1" line namespace pod image host
   local target_re="^demo:$scenario target: ([a-z0-9-]+)/([a-z0-9.-]+) image: ([^[:space:]]+)$"
   expected_reaction "$scenario"
   line="$(grep -E "$target_re" <<<"$output" | tail -n 1)"
@@ -166,11 +196,12 @@ check_admission_scenario() {
         problem "demo:$scenario submits $image, which is signed by the build-image.yml identity"
       ;;
     non-golden-base | eol-base | deprecated-base)
-      if status_of_base="$(base_status "$image")"; then
-        case "$scenario:$status_of_base" in
+      if base_status "$image"; then
+        case "$scenario:$BASE_STATUS" in
           non-golden-base:absent | eol-base:eol | deprecated-base:deprecated) ;;
-          *) problem "demo:$scenario submits $image, whose provenance base is '$status_of_base' in $KYVERNO_NAMESPACE/$GOLDEN_IMAGES_CONFIGMAP" ;;
+          *) problem "demo:$scenario submits $image, whose provenance base is '$BASE_STATUS' in $KYVERNO_NAMESPACE/$GOLDEN_IMAGES_CONFIGMAP" ;;
         esac
+        [ "$scenario" = non-golden-base ] || check_genuine_golden_base "$scenario" "${scenario%-base}"
       else
         problem "demo:$scenario submits $image, whose SLSA provenance does not verify against the build identity with exactly one oci:// base"
       fi

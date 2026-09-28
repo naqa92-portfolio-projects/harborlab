@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
-# Image posture in Grafana and Policy Reporter, live: the `image-posture` dashboard shows, per catalog golden image,
-# CVE counts before/after VEX, the signed/attested share of running images, admission violations and runtime
-# alerts, each backed by the real sources (Harbor Trivy reports, Dependency-Track, cosign, Kyverno, Kubescape);
-# the Policy Reporter UI lists the Kyverno PolicyReports of the cluster.
+# Image posture in Grafana and Policy Reporter, live: the `image-posture` dashboard shows, per golden image (a catalog
+# name, whatever its versions), CVE counts before/after VEX of every catalog entry, the signed/attested share of
+# running images, admission violations and runtime alerts, each backed by the real sources (Harbor Trivy reports,
+# Dependency-Track, cosign, Kyverno, Kubescape); the Policy Reporter UI lists the Kyverno PolicyReports of the cluster.
 # DHI_USERNAME and DHI_TOKEN come from the environment; the token only goes through stdin.
 
 bats_require_minimum_version 1.5.0
@@ -95,6 +95,22 @@ panel_magnitude() {
     total="$(jq -n --argjson a "$total" --argjson b "$m" '$a + $b')"
   done
   echo "$total"
+}
+
+# Fails unless the VictoriaMetrics targets of the panel titled like $1, with the golden variable set to $2, return at
+# least one number over the last hour.
+panel_has_data() {
+  local pattern="$1" golden="$2" targets="$BATS_TEST_TMPDIR/data-targets.json" target="$BATS_TEST_TMPDIR/data-target.json"
+  local numbers=0 count i to
+  panel_targets "$pattern" "$targets" || return 1
+  count="$(jq length "$targets")"
+  for ((i = 0; i < count; i++)); do
+    jq ".[$i]" "$targets" | instantiate_target "$golden" "$target"
+    to="$(now_ms)"
+    grafana_ds_query "$VM_DATASOURCE_UID" "$target" "$((to - DASHBOARD_RANGE_MS))" "$to" || return 1
+    numbers=$((numbers + $(jq "$GRAFANA_JQ"' numbers | length' "$HTTP_BODY")))
+  done
+  [ "$numbers" -gt 0 ] || fail "panel '$pattern' returns no data for golden image $golden"
 }
 
 # Series of the PromQL/MetricsQL instant query $1 through the VictoriaMetrics datasource, as a JSON array of
@@ -214,9 +230,12 @@ cve_problems() {
 
 # Sets EXPECTED to the expected running-container series, a sorted JSON array of {golden, namespace, pod, container,
 # digest, signed, attested}: every running container of a Harbor golden/apps digest image, verified with cosign
-# (results cached in the associative array VERIFIED by digest reference).
+# (results cached in the associative array VERIFIED by digest reference). Also writes RUNNING_BASES, a JSON array of
+# {golden, digest, base} per labelled running image: base is the image's own digest for a golden image, the single
+# oci:// base of its verified SLSA provenance for an app image ("" when it does not verify or names several).
 expected_running() {
-  local pods="$BATS_TEST_TMPDIR/pods.json" ref project identity signed attested golden type rows=()
+  local pods="$BATS_TEST_TMPDIR/pods.json" ref project identity signed attested golden type base provenance_ok rows=()
+  local provenance="$BATS_TEST_TMPDIR/running-provenance.json"
   kubectl get pods -A -o json >"$pods"
   mapfile -t rows < <(jq -r --arg h "$HARBOR_HOST/" '.items[] | .metadata as $m | select($m.deletionTimestamp == null)
     | (.spec.containers | map({key: .name, value: .image}) | from_entries) as $images
@@ -231,19 +250,35 @@ expected_running() {
       identity="$BUILD_IDENTITY"
       [ "$project" != golden ] || identity="$GOLDEN_IDENTITY"
       golden="$(harbor_golden_label "$ref")" || return 1
-      signed=false attested=true
+      signed=false attested=true provenance_ok=true
       cosign verify --certificate-oidc-issuer "$OIDC_ISSUER" --certificate-identity-regexp "$identity" \
         --registry-cacert "$PLATFORM_CA" "$HARBOR_HOST/$ref" >/dev/null 2>&1 && signed=true
       for type in cyclonedx spdxjson slsaprovenance1; do
         cosign verify-attestation --certificate-oidc-issuer "$OIDC_ISSUER" --certificate-identity-regexp "$identity" \
-          --registry-cacert "$PLATFORM_CA" --type "$type" "$HARBOR_HOST/$ref" >/dev/null 2>&1 || attested=false
+          --registry-cacert "$PLATFORM_CA" --type "$type" "$HARBOR_HOST/$ref" >"$provenance" 2>/dev/null || {
+          attested=false
+          [ "$type" != slsaprovenance1 ] || provenance_ok=false
+        }
       done
-      VERIFIED[$ref]="$golden|$signed|$attested"
+      base="${ref##*@}"
+      if [ "$project" != golden ]; then
+        base=""
+        [ "$provenance_ok" != true ] || base="$(attestation_statements "$provenance" |
+          jq -r '[.[].predicate.buildDefinition.resolvedDependencies[]? | select((.uri // "") | startswith("oci://"))
+            | .digest.sha256 // empty] | unique | if length == 1 then "sha256:" + .[0] else "" end')"
+      fi
+      VERIFIED[$ref]="$golden|$signed|$attested|$base"
     fi
   done
   for row in "${rows[@]}"; do
+    IFS='|' read -r _ _ _ ref <<<"$row"
+    IFS='|' read -r golden _ _ base <<<"${VERIFIED[$ref]}"
+    jq -n -c --arg g "$golden" --arg d "${ref##*@}" --arg b "$base" '{golden: $g, digest: $d, base: $b}'
+  done | jq -s -c 'map(select(.golden != "")) | unique' >"$BATS_TEST_TMPDIR/running-bases.json"
+  RUNNING_BASES="$(cat "$BATS_TEST_TMPDIR/running-bases.json")"
+  for row in "${rows[@]}"; do
     IFS='|' read -r namespace pod container ref <<<"$row"
-    IFS='|' read -r golden signed attested <<<"${VERIFIED[$ref]}"
+    IFS='|' read -r golden signed attested _ <<<"${VERIFIED[$ref]}"
     jq -n -c --arg g "$golden" --arg n "$namespace" --arg p "$pod" --arg c "$container" --arg d "${ref##*@}" \
       --arg s "$signed" --arg a "$attested" \
       '{golden: $g, namespace: $n, pod: $p, container: $c, digest: $d, signed: $s, attested: $a}'
@@ -254,8 +289,15 @@ expected_running() {
 @test "image posture dashboard shows every metric per golden image" {
   [ -n "${DHI_USERNAME:-}" ] || fail "DHI_USERNAME is not set in the environment"
   [ -n "${DHI_TOKEN:-}" ] || fail "DHI_TOKEN is not set in the environment"
-  mapfile -t goldens < <(yq -r '.images[].name' "$REPO_ROOT/$CATALOG")
-  [ "${#goldens[@]}" -gt 0 ] || fail "$CATALOG lists no golden image"
+  # Catalog entries, one per (name, version, digest): a name may list several versions (lifecycle history). A golden
+  # image is a catalog name, the value of the image label io.harborlab.golden.name, which carries no version.
+  mapfile -t entries < <(yq -r '.images[] | [.name, .version, .digest, .status] | join("|")' "$REPO_ROOT/$CATALOG")
+  [ "${#entries[@]}" -gt 0 ] || fail "$CATALOG lists no golden image"
+  mapfile -t goldens < <(yq -r '[.images[].name] | unique | .[]' "$REPO_ROOT/$CATALOG")
+  # Golden images a running workload must use: those with a supported entry (eol bases are denied at admission).
+  mapfile -t supported_goldens < <(yq -r '[.images[] | select(.status == "supported") | .name] | unique | .[]' \
+    "$REPO_ROOT/$CATALOG")
+  [ "${#supported_goldens[@]}" -gt 0 ] || fail "$CATALOG has no supported entry"
 
   vm_type="$(grafana_datasource_type "$VM_DATASOURCE_UID")" || return 1
   [[ "$vm_type" == prometheus || "$vm_type" == victoriametrics-metrics-datasource ]] ||
@@ -358,55 +400,52 @@ EOF
     sleep "$POLL_SECONDS"
   done
 
-  # Every catalog image: CVE and signed/attested panels return data.
+  # CVE panel data for every golden image; signed/attested panel data for every golden image a workload must run.
   for golden in "${goldens[@]}"; do
-    for pattern in "$CVE_PANEL" "$SIGNED_PANEL"; do
-      panel_targets "$pattern" "$BATS_TEST_TMPDIR/targets.json"
-      count="$(jq length "$BATS_TEST_TMPDIR/targets.json")"
-      numbers=0
-      for ((i = 0; i < count; i++)); do
-        jq ".[$i]" "$BATS_TEST_TMPDIR/targets.json" | instantiate_target "$golden" "$BATS_TEST_TMPDIR/target.json"
-        to="$(now_ms)"
-        grafana_ds_query "$VM_DATASOURCE_UID" "$BATS_TEST_TMPDIR/target.json" "$((to - DASHBOARD_RANGE_MS))" "$to" || return 1
-        numbers=$((numbers + $(jq "$GRAFANA_JQ"' numbers | length' "$HTTP_BODY")))
-      done
-      [ "$numbers" -gt 0 ] || fail "panel '$pattern' returns no data for golden image $golden"
-    done
+    panel_has_data "$CVE_PANEL" "$golden" || return 1
+  done
+  for golden in "${supported_goldens[@]}"; do
+    panel_has_data "$SIGNED_PANEL" "$golden" || return 1
   done
 
-  # CVE series agree with Harbor's Trivy report, Dependency-Track and the DHI VEX of each golden image.
+  # CVE series of every catalog entry (each version, whatever its status) agree with Harbor's Trivy report,
+  # Dependency-Track and the DHI VEX of its base.
   export DOCKER_CONFIG="$BATS_TEST_TMPDIR/docker"
   (umask 077 && mkdir -p "$DOCKER_CONFIG")
   printf '%s' "$DHI_TOKEN" | crane auth login dhi.io -u "$DHI_USERNAME" --password-stdin >/dev/null 2>&1 ||
     fail "crane auth login dhi.io failed for DHI_USERNAME"
-  for golden in "${goldens[@]}"; do
-    digest="$(yq -r ".images[] | select(.name == \"$golden\") | .digest" "$REPO_ROOT/$CATALOG")"
+  for entry in "${entries[@]}"; do
+    IFS='|' read -r golden version digest entry_status <<<"$entry"
+    what="$GOLDEN_PROJECT/$golden@$digest (catalog $golden $version, $entry_status)"
+    key="${digest#sha256:}"
     harbor_admin GET "/projects/$GOLDEN_PROJECT/repositories/$golden/artifacts/$digest?with_tag=true"
-    [ "$HTTP_CODE" = 200 ] || fail "catalog image $GOLDEN_PROJECT/$golden@$digest is not in Harbor (HTTP $HTTP_CODE)"
+    [ "$HTTP_CODE" = 200 ] || fail "catalog entry $what is not in Harbor (HTTP $HTTP_CODE)"
     tag="$(jq -r '[.tags[]?.name | select(startswith("sha256-") | not)][0] // ""' "$HTTP_BODY")"
-    [ -n "$tag" ] || fail "Harbor holds no image tag for $GOLDEN_PROJECT/$golden@$digest"
+    [ -n "$tag" ] || fail "Harbor holds no image tag for $what"
     harbor_admin GET "/projects/$GOLDEN_PROJECT/repositories/$golden/artifacts/$digest/additions/vulnerabilities"
-    [ "$HTTP_CODE" = 200 ] || fail "no Harbor vulnerability report for $GOLDEN_PROJECT/$golden@$digest (HTTP $HTTP_CODE)"
-    jq --arg t "$HARBOR_REPORT_TYPE" '.[$t].vulnerabilities // []' "$HTTP_BODY" >"$BATS_TEST_TMPDIR/report-$golden.json"
+    [ "$HTTP_CODE" = 200 ] || fail "no Harbor vulnerability report for $what (HTTP $HTTP_CODE)"
+    jq --arg t "$HARBOR_REPORT_TYPE" '.[$t].vulnerabilities // []' "$HTTP_BODY" >"$BATS_TEST_TMPDIR/report-$key.json"
     uuid="$(dt_project_uuid "$GOLDEN_PROJECT/$golden" "$tag")" || return 1
-    [ -n "$uuid" ] || fail "Dependency-Track has no project $GOLDEN_PROJECT/$golden version $tag"
-    dt_findings "$uuid" "$BATS_TEST_TMPDIR/findings-$golden.json" || return 1
-    golden_dhi_openvex "$GHCR_GOLDEN/$golden@$digest" "$BATS_TEST_TMPDIR/dhi-$golden.json"
+    [ -n "$uuid" ] || fail "Dependency-Track has no project $GOLDEN_PROJECT/$golden version $tag ($what)"
+    dt_findings "$uuid" "$BATS_TEST_TMPDIR/findings-$key.json" || return 1
+    golden_dhi_openvex "$GHCR_GOLDEN/$golden@$digest" "$BATS_TEST_TMPDIR/dhi-$key.json"
 
     deadline=$((SECONDS + METRIC_TIMEOUT_SECONDS))
     while :; do
       vm_series "$VULN_METRIC{image=\"$GOLDEN_PROJECT/$golden\",digest=\"$digest\"}" >"$BATS_TEST_TMPDIR/series.json" ||
         return 1
-      problems="$(cve_problems "$BATS_TEST_TMPDIR/series.json" "$golden" "$BATS_TEST_TMPDIR/report-$golden.json" \
-        "$BATS_TEST_TMPDIR/findings-$golden.json" "$BATS_TEST_TMPDIR/dhi-$golden.json")"
+      problems="$(cve_problems "$BATS_TEST_TMPDIR/series.json" "$golden" "$BATS_TEST_TMPDIR/report-$key.json" \
+        "$BATS_TEST_TMPDIR/findings-$key.json" "$BATS_TEST_TMPDIR/dhi-$key.json")"
       [ -n "$problems" ] || break
       [ "$SECONDS" -lt "$deadline" ] ||
-        fail "$VULN_METRIC of $GOLDEN_PROJECT/$golden@$digest after ${METRIC_TIMEOUT_SECONDS}s: $(head -n 8 <<<"$problems")"
+        fail "$VULN_METRIC of $what after ${METRIC_TIMEOUT_SECONDS}s: $(head -n 8 <<<"$problems")"
       sleep "$POLL_SECONDS"
     done
   done
 
-  # Running-container series agree with cosign on every running golden/apps image, each catalog image covered.
+  # Running-container series agree with cosign on every running golden/apps image. Every supported catalog entry
+  # runs: a running container is that golden image or an image built on it. A deprecated entry needs no workload
+  # (when one runs, e.g. after demo:deprecated-base, it is in the series like any other); an eol one cannot get one.
   declare -A VERIFIED
   deadline=$((SECONDS + METRIC_TIMEOUT_SECONDS))
   while :; do
@@ -419,9 +458,12 @@ EOF
       fail "$RUNNING_METRIC after ${METRIC_TIMEOUT_SECONDS}s differs from the running containers verified with cosign: missing $(jq -c -n --argjson e "$expected" --argjson a "$actual" '$e - $a' | head -c 600), unexpected $(jq -c -n --argjson e "$expected" --argjson a "$actual" '$a - $e' | head -c 600)"
     sleep "$POLL_SECONDS"
   done
-  for golden in "${goldens[@]}"; do
-    jq -e --arg g "$golden" 'any(.[]; .golden == $g)' <<<"$expected" >/dev/null ||
-      fail "no running container runs an image built on golden $golden: its signed/attested share would be vacuous"
+  for entry in "${entries[@]}"; do
+    IFS='|' read -r golden version digest entry_status <<<"$entry"
+    [ "$entry_status" = supported ] || continue
+    jq -e --arg g "$golden" --arg d "$digest" 'any(.[]; .golden == $g and (.digest == $d or .base == $d))' \
+      <<<"$RUNNING_BASES" >/dev/null ||
+      fail "no running container runs supported golden $golden $version ($digest) or an image built on it: its signed/attested share would be vacuous (running: $(head -c 600 <<<"$RUNNING_BASES"))"
   done
 }
 

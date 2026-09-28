@@ -23,7 +23,7 @@ spec:
             timeout: 300s
             content: |
               for attempt in 1 2 3; do
-                kubectl apply -n "$NAMESPACE" -f pod.yaml && exit 0
+                ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f - && exit 0
                 sleep 10
               done
               exit 1
@@ -50,7 +50,7 @@ spec:
         - script:
             content: >-
               kubectl debug -n "$NAMESPACE" debug-target --container=debug-unsigned --profile=restricted
-              --image=ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/unsigned:e2e
+              --image="ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/unsigned:$(../../../fixtures/fixture-tag.sh)"
               -- sleep 3600
             check:
               ($error != null): true

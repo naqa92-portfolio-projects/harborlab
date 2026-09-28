@@ -1,4 +1,4 @@
-# Platform tier: an off-list registry (public.ecr.aws) fails the allow-list, allow-listed ones pass (Audit).
+# Platform tier: an off-list registry (mcr.microsoft.com) fails the allow-list, allow-listed ones pass (Audit).
 apiVersion: cli.kyverno.io/v1alpha1
 kind: Test
 metadata:

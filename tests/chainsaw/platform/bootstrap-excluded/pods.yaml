@@ -9,7 +9,7 @@ spec:
     harborlab.io/e2e: unschedulable
   containers:
     - name: main
-      image: public.ecr.aws/docker/library/busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+      image: mcr.microsoft.com/azurelinux/busybox:1.36@sha256:d0156d3b44ad3702b5a34009028bba3e49e62237346951c86ffa1898cb14b45e
 ---
 apiVersion: v1
 kind: Pod
@@ -22,7 +22,7 @@ spec:
     harborlab.io/e2e: unschedulable
   containers:
     - name: main
-      image: public.ecr.aws/docker/library/busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+      image: mcr.microsoft.com/azurelinux/busybox:1.36@sha256:d0156d3b44ad3702b5a34009028bba3e49e62237346951c86ffa1898cb14b45e
 ---
 apiVersion: v1
 kind: Pod
@@ -35,7 +35,7 @@ spec:
     harborlab.io/e2e: unschedulable
   containers:
     - name: main
-      image: public.ecr.aws/docker/library/busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+      image: mcr.microsoft.com/azurelinux/busybox:1.36@sha256:d0156d3b44ad3702b5a34009028bba3e49e62237346951c86ffa1898cb14b45e
 ---
 apiVersion: v1
 kind: Pod
@@ -48,4 +48,4 @@ spec:
     harborlab.io/e2e: unschedulable
   containers:
     - name: main
-      image: public.ecr.aws/docker/library/busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
+      image: mcr.microsoft.com/azurelinux/busybox:1.36@sha256:d0156d3b44ad3702b5a34009028bba3e49e62237346951c86ffa1898cb14b45e

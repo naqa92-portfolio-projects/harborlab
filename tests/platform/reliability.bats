@@ -8,6 +8,8 @@ load dt
 RUNTIME_DEMO=runtime-demo/runtime-demo
 RUNTIME_SHELL_RUNS=3
 RUNTIME_SHELL_TIMEOUT_SECONDS=180
+# Criterion 20: the alert is visible within 2 minutes of the task start.
+ALERT_BUDGET_SECONDS=120
 ROLLOUT_TIMEOUT=180s
 VICTORIA_LOGS_POD=observability/victoria-logs-0
 VICTORIA_LOGS_MIN_LIMIT_MI=512
@@ -53,12 +55,21 @@ pinned_digests() {
     kubectl -n "${RUNTIME_DEMO%/*}" rollout restart "deployment/${RUNTIME_DEMO#*/}" >/dev/null
     kubectl -n "${RUNTIME_DEMO%/*}" rollout status "deployment/${RUNTIME_DEMO#*/}" --timeout="$ROLLOUT_TIMEOUT" >/dev/null ||
       fail "run $run: deployment $RUNTIME_DEMO did not roll out within $ROLLOUT_TIMEOUT"
-    # Once, no retry: the first shell on the recreated pod must raise the alert.
+    # The task is run once: it may run a new shell until node-agent alerts, each one announced.
+    started=$SECONDS
     run timeout "$RUNTIME_SHELL_TIMEOUT_SECONDS" bash -c 'cd "$1" && exec task demo:runtime-shell' _ "$REPO_ROOT"
+    elapsed=$((SECONDS - started))
     [ "$status" -eq 0 ] ||
       fail "run $run of $RUNTIME_SHELL_RUNS: demo:runtime-shell exited $status on a just-recreated pod: $(tail -n 3 <<<"$output" | paste -sd ' ' -)"
     grep -qE '^runtime-shell alert: .+' <<<"$output" ||
       fail "run $run: demo:runtime-shell exited 0 without printing the alert it observed"
+    [ "$elapsed" -le "$ALERT_BUDGET_SECONDS" ] ||
+      fail "run $run: demo:runtime-shell printed its alert ${elapsed}s after the task started (budget ${ALERT_BUDGET_SECONDS}s)"
+    shells="$(grep -c '^shell ran in ' <<<"$output" || true)"
+    reruns="$(grep -c 'running a new shell$' <<<"$output" || true)"
+    [ "$shells" -ge 1 ] && [ "$shells" -eq $((reruns + 1)) ] ||
+      fail "run $run: $shells shell(s) ran but $reruns re-run(s) were announced: every shell after the first must be announced"
+    echo "run $run: alert ${elapsed}s after the task started, $shells shell(s)" >&3
   done
 }
 

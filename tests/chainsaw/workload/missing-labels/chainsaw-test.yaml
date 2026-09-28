@@ -17,7 +17,7 @@ spec:
     - name: admission denies the pod
       try:
         - script:
-            content: kubectl apply -n "$NAMESPACE" -f pod.yaml
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
             check:
               ($error != null): true
               (contains($stderr, 'workload-image-labels')): true

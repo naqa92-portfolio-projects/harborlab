@@ -14,6 +14,8 @@ CATALOG=images/catalog.yaml
 FIXTURE_SOURCES=tests/fixtures/images
 FIXTURES_PREFIX=ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/
 HARBOR_WORKLOAD_PREFIXES=$'harbor.127.0.0.1.nip.io/apps/\nharbor.127.0.0.1.nip.io/golden/'
+FIXTURE_PIN=images/demo-fixtures.yaml
+FIXTURE_TAG_HELPER=tests/fixtures/fixture-tag.sh
 
 # "<case>|<policy name>" per deny/warn case of criteria 9-10; PSS restricted is native Pod Security
 # Admission, which `kyverno test` does not evaluate.
@@ -240,4 +242,18 @@ version_at_least() {
     [ "$actual" = "$status" ] ||
       fail "$FIXTURE_SOURCES/$fixture base $digest has status '$actual' in $E2E_GOLDEN_PARAMS, expected '$status'"
   done
+}
+
+@test "admission suites consume the fixtures by the sha-<commit> tag pinned in images/demo-fixtures.yaml" {
+  commit="$(yq '.commit' "$REPO_ROOT/$FIXTURE_PIN")"
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail "$FIXTURE_PIN .commit is not a full commit sha: $commit"
+  tag="$("$REPO_ROOT/$FIXTURE_TAG_HELPER")"
+  [ "$tag" = "sha-$commit" ] || fail "$FIXTURE_TAG_HELPER prints '$tag', expected sha-$commit"
+
+  # Every fixture reference of the kyverno and Chainsaw cases names the pinned tag through the helper.
+  refs="$(grep -rhoE 'harborlab/(fixtures|offlist)/[a-z0-9-]+[:@][^[:space:]"]*' \
+    "$REPO_ROOT/tests/kyverno" "$REPO_ROOT/tests/chainsaw" | sort -u)"
+  [ -n "$refs" ] || fail "no fixture reference under tests/kyverno or tests/chainsaw"
+  moving="$(grep -vE ':(\$\{FIXTURE_TAG\}|\$\(\.\./\.\./\.\./fixtures/fixture-tag\.sh\))$' <<<"$refs" || true)"
+  [ -z "$moving" ] || fail "fixture references not on the pinned tag: $(paste -sd ' ' - <<<"$moving")"
 }

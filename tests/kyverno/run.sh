@@ -34,6 +34,11 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/tests"
 cp -R "$REPO_ROOT/tests/kyverno" "$WORK/tests/kyverno"
+# Fixture images are named by the immutable tag pinned in images/demo-fixtures.yaml, never by `e2e`.
+while IFS= read -r -d '' file; do
+  "$REPO_ROOT/tests/fixtures/fixture-tag.sh" "$file" >"$file.rendered" || fail "cannot set the fixture tag in $file"
+  mv "$file.rendered" "$file"
+done < <(find "$WORK/tests/kyverno" -name '*.yaml' -print0)
 # Suites name their policies relative to the repo root copy; a missing policy file is reported by kyverno.
 "$REPO_ROOT/scripts/render-policies.sh" "$REVISION" "$WORK" ||
   fail "cannot render the policies for revision $REVISION"

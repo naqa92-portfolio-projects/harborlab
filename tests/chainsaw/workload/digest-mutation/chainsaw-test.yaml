@@ -18,17 +18,16 @@ spec:
     - name: admission accepts the pod referenced by tag
       try:
         - script:
-            content: kubectl apply -n "$NAMESPACE" -f pod.yaml
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
             check:
               ($error == null): true
     - name: the stored image reference ends with the tag's digest
       try:
         - script:
-            env:
-              - name: TAGGED
-                value: ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/compliant:e2e
             content: |
               set -eu
+              TAGGED="$(../../../fixtures/fixture-tag.sh pod.yaml | yq '.spec.containers[0].image')"
+              echo "applied image: $TAGGED"
               want="$(crane digest "$TAGGED")"
               got="$(kubectl get pod digest-mutation -n "$NAMESPACE" -o jsonpath='{.spec.containers[0].image}')"
               echo "stored image: $got"

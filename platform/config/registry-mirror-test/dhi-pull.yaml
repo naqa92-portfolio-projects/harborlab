@@ -4,6 +4,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: registry-mirror-test
+  labels:
+    harborlab.io/tier: platform
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

@@ -21,6 +21,12 @@ trusts, per namespace tier, and the exceptions that trust relies on.
 | Workload | labelled `harborlab.io/tier=workload` | Full chain, enforced (`Deny`): signature and attestations by the build identity, catalog-approved base, labels, Harbor `golden`/`apps` only, Pod Security `restricted`, digest pinning |
 | Platform | labelled `harborlab.io/tier=platform` | Reported only (`Audit`): registry host in the platform allow-list; Kyverno, Cilium and Argo CD images verified against their vendor's keyless GitHub Actions identity |
 | Bootstrap | `kube-system`, `cilium`, `argocd`, `kyverno` | None: excluded by name (see below) |
+| None | any other namespace (no `harborlab.io/tier`, or another value) | Every pod denied (`tier-required`): enforcement fails closed, a missing label never turns the workload rules off |
+
+Only platform administrators (cluster admins and Argo CD, which syncs the labels from git) set a tier:
+anyone else allowed to edit namespaces can put a new or unlabelled one in the workload tier, but cannot
+remove `harborlab.io/tier`, change it or choose `platform` (`tier-label`). The platform namespaces are
+labelled in `platform/config/tiers/namespaces.yaml`.
 
 The allow-lists live in the ConfigMap `kyverno/harborlab-registries` (`policies/params/registries.yaml`)
 and the golden catalog in `kyverno/golden-images`, generated from `images/catalog.yaml`.

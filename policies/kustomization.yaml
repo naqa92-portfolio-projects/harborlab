@@ -5,6 +5,8 @@ resources:
   - params/registries.yaml
   - platform/registry-allow-list.yaml
   - platform/vendor-signatures.yaml
+  - tiers/tier-label.yaml
+  - tiers/tier-required.yaml
   - workload/golden-base-deprecated.yaml
   - workload/golden-base.yaml
   - workload/image-labels.yaml

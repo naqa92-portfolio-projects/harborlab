@@ -66,10 +66,12 @@ jobs:
       - name: Apply the E2E params and the policies
         run: |
           devbox run -- kubectl apply -f tests/chainsaw/params
+          # kind's provisioner namespace is a platform namespace, as on the platform cluster.
+          devbox run -- kubectl label namespace local-path-storage harborlab.io/tier=platform --overwrite
           devbox run -- scripts/render-policies.sh "$HARBORLAB_REVISION" "$RUNNER_TEMP/rendered"
           for attempt in $(seq 1 30); do
             devbox run -- kubectl apply -f "$RUNNER_TEMP/rendered/policies/workload" \
-              -f "$RUNNER_TEMP/rendered/policies/platform" && exit 0
+              -f "$RUNNER_TEMP/rendered/policies/platform" -f "$RUNNER_TEMP/rendered/policies/tiers" && exit 0
             echo "attempt $attempt: Kyverno webhook not ready, retrying"
             sleep 10
           done

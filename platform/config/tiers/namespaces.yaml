@@ -1,0 +1,91 @@
+# Platform-tier namespaces running pods: the Applications (or kind, for local-path-storage) create them,
+# this file labels them. Pods need a tier (policy tier-required); Argo CD never deletes these namespaces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dependency-track
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: harbor
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubescape
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: local-path-storage
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openbao
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: policy-reporter
+  labels:
+    harborlab.io/tier: platform
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false

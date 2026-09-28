@@ -10,7 +10,8 @@ GOLDEN_PROJECT=golden
 DT_HOST=dependency-track.127.0.0.1.nip.io
 DT_API_KEY_SECRET=dt-bridge/dependency-track-api-key
 DT_BRIDGE=dt-bridge/dt-bridge
-DT_BRIDGE_EVENTS_PROXY=/api/v1/namespaces/dt-bridge/services/dt-bridge:http/proxy/harbor/events
+# The replayed event carries the webhook shared secret Harbor sends (Authorization header).
+DT_BRIDGE_WEBHOOK_SECRET=dt-bridge/harbor-webhook
 # dt-bridge waits for Dependency-Track's SBOM analysis before it uploads the VEX.
 UPLOAD_TIMEOUT_SECONDS=600
 PROCESSING_TIMEOUT_SECONDS=240
@@ -47,8 +48,22 @@ jq -n --arg project "$GOLDEN_PROJECT" --arg name "$name" --arg tag "$tag" --arg 
       repository: {namespace: $project, name: $name, repo_full_name: "\($project)/\($name)"},
       resources: [{digest: $digest, tag: $tag}]
     }}' >"$WORK/event.json"
-kubectl create --raw "$DT_BRIDGE_EVENTS_PROXY" -f "$WORK/event.json" >/dev/null ||
-  die "dt-bridge did not accept the replayed Harbor event"
+kubectl -n "${DT_BRIDGE%/*}" port-forward "service/${DT_BRIDGE#*/}" :8080 >"$WORK/port-forward.log" 2>&1 &
+forward=$!
+port=""
+for _ in $(seq 1 30); do
+  port="$(grep -oE '127\.0\.0\.1:[0-9]+' "$WORK/port-forward.log" | head -n 1 | cut -d: -f2 || true)"
+  [ -z "$port" ] || break
+  sleep 1
+done
+[ -n "$port" ] || { kill "$forward"; die "kubectl port-forward to $DT_BRIDGE did not start"; }
+# The secret reaches curl through stdin, never argv.
+code="$(kubectl -n "${DT_BRIDGE_WEBHOOK_SECRET%/*}" get secret "${DT_BRIDGE_WEBHOOK_SECRET#*/}" \
+  -o jsonpath='{.data.token}' | base64 -d | { printf 'Authorization: Bearer '; cat; echo; } |
+  curl -sS -H @- -H 'Content-Type: application/json' --data @"$WORK/event.json" -o /dev/null -w '%{http_code}' \
+    "http://127.0.0.1:$port/harbor/events")" || code=000
+kill "$forward"
+[ "$code" = 202 ] || die "dt-bridge did not accept the replayed Harbor event (HTTP $code)"
 
 # dt-bridge logs one JSON entry per step of this image; the upload entry names the DT token.
 deadline=$((SECONDS + UPLOAD_TIMEOUT_SECONDS))

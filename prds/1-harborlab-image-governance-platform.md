@@ -72,6 +72,7 @@ notes-m8b: GOGC workaround removed 6b0378c (Grafana alerting and default GOMEMLI
 notes-m9: red d3b722b; M9 coder also fixes T9 (demo:runtime-shell runs once, no retry, in demo_scenarios); live eol/deprecated demo bases must be genuine golden entries in images/catalog.yaml (older golden versions), not fakes
 resumed-m9: human (2026-09-28) chose catalogue A — genuine older golden versions (deprecated/eol) in images/catalog.yaml; tester adapts CAT-021 to multi-version catalog (running container required only for supported/deprecated). M9 coder 02128e9 3238658: docs 7/7 green; demo_scenarios 0/2 because demo:deprecated-base and demo:eol-base have no genuine deprecated/eol golden image — adding real older golden entries to images/catalog.yaml breaks observability.bats (CAT-021: yq select by name returns several digests; 'one running container per catalog image' impossible for an eol base) → human decision needed; the 7 other scenarios pass incl. negative control. M9 green not run yet; tester rework e3a7f05 (multi-version catalog in CAT-021/023/013); sequence: coder older golden versions + catalog + demo:vex fresh-cluster failure → tester demo fixtures → coder publish/replicate → green
 notes-m9b: coder 22ad6dc 6892f2b 49142fb 719b9af e9f4b0a — catalog python 3.13 supported, python 3.10 deprecated (tag 3.10-sha-6892f2b), java 21 supported, java 26 eol (genuine non-LTS EOL 2026-09-15, newer than 21: DHI python 3.9 not usable — debian13 401, debian12 fails Trivy CRITICAL); demo:vex root cause = single VEX worker behind replication bursts → 8 workers; policies.yml waits for Kyverno webhook before apply; tester fixtures 16e238a (demo-deprecated-base FROM python 3.10, demo-eol-base FROM java 26); coder next: publish/replicate/wire
+notes-m9c: coder fbc49f5 835a56f — demo_scenarios 2/2 (9 scenarios + negative control), docs 7/7; M9 green next, then pause before review
 pr: none
 findings:
 - T1 pending — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
@@ -86,6 +87,7 @@ findings:
 - T10 pending — victoria-logs-0 OOMKilled at its 160Mi limit (set during the 10 GiB squeeze, kept after the budget moved to 12 GiB)
 - T11 pending — Harbor retention keeps the 10 most recent artifacts per repository: future golden rebuilds can evict catalog-referenced older versions (python 3.10 deprecated, java 26 eol); retention should protect digests pinned in images/catalog.yaml
 - T12 pending — images/catalog.yaml pins the b9fdf90 golden builds while golden.yml has since published newer supported builds (6892f2b); no automation keeps the catalog in step (same gap as Renovate DHI bumps)
+- T13 pending — fixture `e2e` tags move on GHCR (each push rebuilds compliant with a new digest) while Harbor tags are immutable: replication apps-demo-fixtures-from-ghcr fails with 412 since 12:15; demo-admission.sh now tolerates the failed execution and checks the image itself (835a56f) — root cause (mutable tag) not fixed
 demo:
 
 ## Milestones

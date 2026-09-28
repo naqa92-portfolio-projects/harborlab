@@ -77,7 +77,7 @@ review-started: human resumed (2026-09-28) — phase 3; reviewer done (R1–R8, 
 pr: none
 findings:
 - T1 pending — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
-- T2 pending — workload signature identity accepts build-image.yml@refs/heads/(main|prd-.+): any prd-* branch can sign admissible images; production should trust main only (review at phase 3)
+- T2 fixed 5260442 — workload signature identity accepts build-image.yml@refs/heads/(main|prd-.+): any prd-* branch can sign admissible images; production should trust main only (review at phase 3)
 - T3 pending — public-repo audit 2026-09-27: no ruleset / branch protection on main and prd-*; with T2 the signing identity is only as strong as who can push those refs (human action: ruleset protecting main + restricting prd-* creation)
 - T4 pending — after docker stop/start of the kind node, platform does not reconverge: kyverno-reports-controller CrashLoop (leader lease lost, client rate limiter deadline, 64-128Mi limits) and Argo CD keeps harbor/platform-config Degraded with all children Healthy; rebuilt with task down && task up
 - T5 fixed a028864 — fresh task up (M5 code): Kyverno admission/reports pods blocked ~12 min on FailedMount of ConfigMap kyverno-harborlab-ca (trust-manager Bundle target created late); bootstrap ordering between trust-manager Bundle and Kyverno (workloads now synced after Kyverno policies are ready; Kyverno still waits ~2.5 min on the CA ConfigMap)
@@ -89,24 +89,24 @@ findings:
 - T11 pending — Harbor retention keeps the 10 most recent artifacts per repository: future golden rebuilds can evict catalog-referenced older versions (python 3.10 deprecated, java 26 eol); retention should protect digests pinned in images/catalog.yaml
 - T12 pending — images/catalog.yaml pins the b9fdf90 golden builds while golden.yml has since published newer supported builds (6892f2b); no automation keeps the catalog in step (same gap as Renovate DHI bumps)
 - T13 pending — fixture `e2e` tags move on GHCR (each push rebuilds compliant with a new digest) while Harbor tags are immutable: replication apps-demo-fixtures-from-ghcr fails with 412 since 12:15; demo-admission.sh now tolerates the failed execution and checks the image itself (835a56f) — root cause (mutable tag) not fixed
-- R1 pending — workload policies miss pods/ephemeralcontainers: kubectl debug bypasses criterion 9 (verified live by dry-run)
-- R2 pending — public reusable build-image.yml callable by any repo: SAN equals trusted identity; bind caller repo (job guard + Kyverno keyless extensions + dt-bridge SanMatches)
+- R1 fixed d998ae9 cf967e1 — workload policies miss pods/ephemeralcontainers: kubectl debug bypasses criterion 9 (verified live by dry-run)
+- R2 fixed d7dd3e4 8b9d8a2 ba59f94 — public reusable build-image.yml callable by any repo: SAN equals trusted identity; bind caller repo (job guard + Kyverno keyless extensions + dt-bridge SanMatches)
 - R3 pending — dt-bridge webhook/Kubescape paths upload SBOM and read provenance without Sigstore verification; DHI OpenVEX not verified with DHI key (criterion 17 "verified provenance" not met) — supersedes T6
 - R4 pending — no docs/WORKAROUNDS.md registry for upstream workarounds with exit conditions
 - R5 pending — renovate.json lets DHI version bumps through for pinned lifecycle versions (3.10, 26, 21): restrict to digest updates
 - R6 pending — hello-java pom forces tomcat.version 11.0.26 untracked by Renovate
 - R7 pending — runtime-demo Application ignoreDifferences /spec on ContainerProfile: git changes never applied
 - R8 pending — README says task up converges a stopped node (false, T4)
-- A1 pending — build-image.yml signs an existing GHCR digest it did not build (tag pre-pushed by any branch with packages:write, then workflow_dispatch on main)
-- A2 pending — base digest in label/SLSA provenance parsed by awk from the Dockerfile (syntax directive / heredoc spoofing), not from BuildKit metadata
-- A3 pending — DHI signature verified against dhi.io/keyring/latest.pub fetched at build time instead of a pinned key
-- A4 pending — enforcement opt-in by namespace label (fail-open; label removable; no namespace carries tier=platform)
+- A1 fixed cb0a1ba — build-image.yml signs an existing GHCR digest it did not build (tag pre-pushed by any branch with packages:write, then workflow_dispatch on main)
+- A2 fixed 8e967ec — base digest in label/SLSA provenance parsed by awk from the Dockerfile (syntax directive / heredoc spoofing), not from BuildKit metadata
+- A3 fixed edb1c84 — DHI signature verified against dhi.io/keyring/latest.pub fetched at build time instead of a pinned key
+- A4 fixed 1c4f357 — enforcement opt-in by namespace label (fail-open; label removable; no namespace carries tier=platform)
 - A5 pending — ClusterSecretStore openbao has no namespace conditions and its role reads all platform/* (any ExternalSecret can exfiltrate the CA key and admin creds)
 - A6 pending — platform-audit role reads secret values instead of metadata only
 - A7 pending — shared Gateway accepts HTTPRoutes from all namespaces; tenant route can hijack harbor paths; ClusterIssuer usable cluster-wide
 - A8 pending — Harbor webhook unauthenticated, no NetworkPolicies (queue flooding, forged VictoriaLogs lines skewing dashboards)
 - A9 pending — dt-bridge Dockerfile installs uv from PyPI without hashes
-demo:
+- R9 pending — ADR 0007 still describes the old main|prd-* identity; needs an amendment/superseding note for main-only + repository binding + environment-specific revision trust (B4)
 
 ## Milestones
 

@@ -170,6 +170,11 @@ spec:
                 secretKeyRef:
                   name: dependency-track-api-key
                   key: api-key
+            - name: HARBOR_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-webhook
+                  key: token
             - name: DHI_USERNAME
               valueFrom:
                 secretKeyRef:

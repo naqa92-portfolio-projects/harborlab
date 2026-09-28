@@ -45,10 +45,17 @@ locals {
   ]
 }
 
-# The dhi.io credential has no write-only variant: it is the one secret the encrypted state holds.
+# The dhi.io credential has no write-only variant: the encrypted state holds it.
 data "vault_kv_secret_v2" "dhi" {
   mount = "secret"
   name  = "platform/dhi"
+}
+
+# harbor_project_webhook.auth_header has no write-only variant either: the webhook secret is held by the
+# encrypted state, and shown as sensitive in plans.
+data "vault_kv_secret_v2" "webhook_dt_bridge" {
+  mount = "secret"
+  name  = "platform/harbor-webhook-dt-bridge"
 }
 
 ephemeral "vault_kv_secret_v2" "robot_dt_bridge" {
@@ -202,6 +209,7 @@ resource "harbor_project_webhook" "dt_bridge" {
   description      = "Artifact events for dt-bridge"
   project_id       = harbor_project.governed[each.key].id
   address          = local.webhook_address
+  auth_header      = "Bearer ${data.vault_kv_secret_v2.webhook_dt_bridge.data["token"]}"
   notify_type      = "http"
   events_types     = ["PUSH_ARTIFACT", "REPLICATION"]
   skip_cert_verify = false

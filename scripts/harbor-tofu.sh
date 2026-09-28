@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs OpenTofu on tofu/harbor/ logged into OpenBao as `harbor-tofu`: configure | plan | tofu <args>;
-# `seed` only generates the missing robot secrets in OpenBao.
+# `seed` only generates the missing robot and webhook secrets in OpenBao.
 # Only tofu writes to stdout; secrets travel through pipes and the environment, never argv.
 set -euo pipefail
 
@@ -70,6 +70,17 @@ seed_robot_secrets() {
   done
 }
 
+# Shared secret Harbor sends to dt-bridge in the webhook Authorization header; generated once.
+WEBHOOK_SECRET_PATH=platform/harbor-webhook-dt-bridge
+seed_webhook_secret() {
+  if bao_root 'bao kv get -mount=secret "$1" >/dev/null 2>&1' "$WEBHOOK_SECRET_PATH" </dev/null; then
+    return
+  fi
+  log "generating the dt-bridge webhook secret into OpenBao secret/$WEBHOOK_SECRET_PATH"
+  openssl rand -hex 32 | jq -Rn '{token: input}' |
+    bao_root 'bao kv put -mount=secret "$1" - >/dev/null' "$WEBHOOK_SECRET_PATH"
+}
+
 # OpenBao is reached through a port-forward bound to 127.0.0.1 for the duration of the run.
 start_openbao_forward() {
   local port=""
@@ -116,11 +127,11 @@ run_tofu() {
 
 export TF_IN_AUTOMATION=1 TF_INPUT=0
 
-[ "$MODE" != configure ] || seed_robot_secrets
-if [ "$MODE" = seed ]; then
+if [ "$MODE" = configure ] || [ "$MODE" = seed ]; then
   seed_robot_secrets
-  exit 0
+  seed_webhook_secret
 fi
+[ "$MODE" != seed ] || exit 0
 start_openbao_forward
 openbao_login
 trust_local_ca

@@ -32,7 +32,7 @@ ESO_CONSUMERS=(
   "cert-manager|platform/local-ca"
   "harbor|platform/harbor-admin platform/harbor-db platform/harbor-registry platform/harbor-internal platform/harbor-token-service"
   "dependency-track|platform/dependency-track-db"
-  "dt-bridge|platform/harbor-robot-dt-bridge platform/dependency-track-api-key platform/dhi"
+  "dt-bridge|platform/harbor-robot-dt-bridge platform/dependency-track-api-key platform/dhi platform/harbor-webhook-dt-bridge"
   "observability|platform/grafana-admin"
   "registry-mirror-test|platform/dhi"
 )
@@ -277,7 +277,8 @@ ensure_openbao() {
       "path \"transit/decrypt/harbor-tofu-state\" { capabilities = [\"update\"] }" \
       "path \"secret/data/platform/harbor-admin\" { capabilities = [\"read\"] }" \
       "path \"secret/data/platform/harbor-robot-dt-bridge\" { capabilities = [\"read\"] }" \
-      "path \"secret/data/platform/dhi\" { capabilities = [\"read\"] }" >/tmp/harbor-tofu.hcl
+      "path \"secret/data/platform/dhi\" { capabilities = [\"read\"] }" \
+      "path \"secret/data/platform/harbor-webhook-dt-bridge\" { capabilities = [\"read\"] }" >/tmp/harbor-tofu.hcl
     bao policy write harbor-tofu /tmp/harbor-tofu.hcl >/dev/null
     rm -f /tmp/harbor-tofu.hcl
     bao write auth/kubernetes/role/harbor-tofu bound_service_account_names=harbor-tofu \

@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 import os
@@ -236,6 +237,7 @@ def posture_worker(posture: Posture) -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     app.state.governed_projects = set(os.environ.get("GOVERNED_PROJECTS", "golden,apps").split(","))
+    app.state.webhook_authorization = f"Bearer {required_env('HARBOR_WEBHOOK_TOKEN')}".encode()
     bridge = build_bridge()
     threading.Thread(target=sbom_worker, args=(bridge,), daemon=True, name="sbom-worker").start()
     for index in range(VEX_WORKERS):
@@ -279,7 +281,12 @@ def metrics(request: Request) -> str:
 
 @app.post("/harbor/events", status_code=202)
 async def harbor_events(request: Request, response: Response) -> dict[str, int]:
-    """Harbor webhook: the event only names images; their SBOM and VEX are read from the registries."""
+    """Harbor webhook: the event only names images; their SBOM and VEX are read from the registries.
+    Harbor authenticates with the shared secret in the Authorization header (webhook auth_header)."""
+    presented = request.headers.get("authorization", "").encode()
+    if not hmac.compare_digest(presented, request.app.state.webhook_authorization):
+        response.status_code = 401
+        return {"queued": 0}
     try:
         event = await request.json()
     except ValueError:

@@ -5,7 +5,7 @@
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 PLATFORM_KUBECONFIG="$REPO_ROOT/.kube/harborlab.yaml"
 TOFU_STATE=tofu/harbor/terraform.tfstate
-DHI_KV_PATH=platform/dhi
+DHI_PULL_SECRET=registry-mirror-test/dhi-pull
 HARBOR_HOST=harbor.127.0.0.1.nip.io
 HARBOR_NAMESPACE=harbor
 HARBOR_ADMIN_SECRET=harbor-admin
@@ -37,9 +37,11 @@ REPLICATION_REGISTRY=ghcr
 WEBHOOK_POLICY=dt-bridge
 WEBHOOK_ADDRESS=http://dt-bridge.dt-bridge.svc.cluster.local:8080/harbor/events
 
-# "<Harbor robot name>|<OpenBao KV path under secret/>"; fields `username` and `password`.
+# "<Harbor robot name>|<OpenBao KV path under secret/>|<namespace>/<Secret delivered by External
+# Secrets to the consumer>"; fields and keys `username` and `password`. The audit role reads KV
+# metadata only: values come from the consumer's Secret.
 ROBOTS=(
-  'robot$dt-bridge|platform/harbor-robot-dt-bridge'
+  'robot$dt-bridge|platform/harbor-robot-dt-bridge|dt-bridge/harbor-robot-dt-bridge'
 )
 
 fail() {
@@ -90,13 +92,25 @@ openbao_audit() {
     '"$script" sh "$@"
 }
 
-# Current KV v2 version of an OpenBao path; the full response is parsed here and never printed.
-openbao_version() {
-  openbao_audit 'bao kv get -mount=secret -format=json "$1"' "$1" 2>/dev/null | jq -r '.data.metadata.version'
+# KV v2 metadata of an OpenBao path (versions and times, no value).
+openbao_metadata() {
+  openbao_audit 'bao kv metadata get -mount=secret -format=json "$1"' "$1" 2>/dev/null
 }
 
-openbao_field() {
-  openbao_audit 'bao kv get -mount=secret -field="$2" "$1"' "$1" "$2"
+openbao_version() {
+  openbao_metadata "$1" | jq -r '.data.current_version'
+}
+
+# Decoded value of a key of a Kubernetes Secret "<namespace>/<name>"; callers never print it.
+secret_value() {
+  local secret_ref="$1" key="$2"
+  kubectl -n "${secret_ref%%/*}" get secret "${secret_ref#*/}" -o json | jq -r --arg k "$key" '.data[$k] // "" | @base64d'
+}
+
+# The DHI token as delivered for the `dhi.io` pull (password, or the part of `auth` after the user).
+dhi_token() {
+  secret_value "$DHI_PULL_SECRET" .dockerconfigjson |
+    jq -r '.auths["dhi.io"] | .password // (.auth // "" | @base64d | sub("^[^:]*:"; ""))'
 }
 
 # Runs a Taskfile task from the repository root; sets TASK_STATUS and TASK_LOG (stdout + stderr).
@@ -118,10 +132,10 @@ refute_secret_in() {
 }
 
 refute_robot_secrets_in() {
-  local file="$1" what="$2" entry name path
+  local file="$1" what="$2" entry name path secret_ref
   for entry in "${ROBOTS[@]}"; do
-    IFS='|' read -r name path <<<"$entry"
-    refute_secret_in "$file" "$what" "secret of $name" "$(openbao_field "$path" password)"
+    IFS='|' read -r name path secret_ref <<<"$entry"
+    refute_secret_in "$file" "$what" "secret of $name" "$(secret_value "$secret_ref" password)"
   done
 }
 
@@ -130,7 +144,7 @@ refute_platform_secrets_in() {
   local file="$1" what="$2"
   refute_secret_in "$file" "$what" "Harbor admin password" "$(harbor_admin_password)"
   refute_robot_secrets_in "$file" "$what"
-  refute_secret_in "$file" "$what" "DHI token" "$(openbao_field "$DHI_KV_PATH" token)"
+  refute_secret_in "$file" "$what" "DHI token" "$(dhi_token)"
 }
 
 # Decrypted state as `tofu show -json`, written mode 600; it holds sensitive values, never printed.
@@ -154,7 +168,7 @@ MANAGED_RESOURCES='def mods: ., (.child_modules[]? | mods);
 
 # The state manages every category of the configuration contract; an empty plan is otherwise vacuous.
 assert_state_manages_every_category() {
-  local state="$1" entry project registry type url policy filter name path
+  local state="$1" entry project registry type url policy filter name path secret_ref
   for entry in "${PROXY_CACHES[@]}"; do
     IFS='|' read -r project registry type url <<<"$entry"
     jq -e --arg r "$registry" "$MANAGED_RESOURCES"' | any(.[]; .type == "harbor_registry" and .values.name == $r)' \
@@ -180,7 +194,7 @@ assert_state_manages_every_category() {
   done
 
   for entry in "${ROBOTS[@]}"; do
-    IFS='|' read -r name path <<<"$entry"
+    IFS='|' read -r name path secret_ref <<<"$entry"
     jq -e --arg n "$name" "$MANAGED_RESOURCES"' | any(.[]; .type == "harbor_robot_account" and .values.full_name == $n)' \
       "$state" >/dev/null || fail "OpenTofu state manages no harbor_robot_account $name"
   done
@@ -210,7 +224,7 @@ assert_harbor_on_cnpg() {
 # Normalised JSON of every object `task harbor:configure` manages, plus the OpenBao version of
 # each robot secret (a regenerated secret is a change even though Harbor never returns it).
 harbor_snapshot() {
-  local out="$1" work project retention_id entry name path
+  local out="$1" work project retention_id entry name path secret_ref
   work="$(mktemp -d "$BATS_TEST_TMPDIR/snapshot.XXXXXX")"
   harbor_admin_json "/projects?page_size=100" >"$work/projects.json"
   harbor_admin_json "/registries?page_size=100" >"$work/registries.json"
@@ -236,7 +250,7 @@ harbor_snapshot() {
 
   echo '{}' >"$work/openbao.json"
   for entry in "${ROBOTS[@]}"; do
-    IFS='|' read -r name path <<<"$entry"
+    IFS='|' read -r name path secret_ref <<<"$entry"
     jq --arg p "$path" --arg v "$(openbao_version "$path")" '. + {($p): $v}' "$work/openbao.json" >"$work/openbao.next.json"
     mv "$work/openbao.next.json" "$work/openbao.json"
   done
@@ -260,7 +274,7 @@ harbor_snapshot() {
 
 # The snapshot holds the configuration the contract names; otherwise "unchanged" would prove nothing.
 assert_expected_configuration() {
-  local snapshot="$1" entry project registry type url policy filter name path
+  local snapshot="$1" entry project registry type url policy filter name path secret_ref
 
   for entry in "${PROXY_CACHES[@]}"; do
     IFS='|' read -r project registry type url <<<"$entry"
@@ -315,7 +329,7 @@ assert_expected_configuration() {
   done
 
   for entry in "${ROBOTS[@]}"; do
-    IFS='|' read -r name path <<<"$entry"
+    IFS='|' read -r name path secret_ref <<<"$entry"
     jq -e --arg n "$name" '
       any(.robots[]; .name == $n and .level == "system" and (.disable | not) and .duration == -1
         and ([.permissions[].namespace] | sort) == ["apps", "golden"]
@@ -327,18 +341,41 @@ assert_expected_configuration() {
   done
 }
 
-# Each robot's credential stored in OpenBao authenticates against Harbor, and a wrong one does not.
+# The Secret is controller-owned by a Ready ExternalSecret that delivers `username` and `password`
+# from the OpenBao path, refreshed after its current version was written: it holds that version.
+assert_delivers_current_openbao_version() {
+  local secret_ref="$1" path="$2" namespace="${1%%/*}" owner external_secret created
+  owner="$(kubectl -n "$namespace" get secret "${secret_ref#*/}" -o json |
+    jq -r '.metadata.ownerReferences[]? | select(.kind == "ExternalSecret" and .controller == true) | .name')"
+  [ -n "$owner" ] || fail "Secret $secret_ref is missing or not owned by an ExternalSecret"
+  external_secret="$(kubectl -n "$namespace" get externalsecrets.external-secrets.io "$owner" -o json)" ||
+    fail "ExternalSecret $namespace/$owner not found"
+  jq -e --arg p "$path" 'any(.status.conditions[]?; .type == "Ready" and .status == "True")
+    and ([.spec.data[]? | select(.remoteRef.key == $p) | .remoteRef.property] | sort) == ["password", "username"]' \
+    <<<"$external_secret" >/dev/null ||
+    fail "ExternalSecret $namespace/$owner is not Ready or does not deliver username and password from OpenBao secret/$path"
+  created="$(openbao_metadata "$path" | jq -r '.data as $d | $d.versions[($d.current_version | tostring)].created_time // ""')"
+  [ -n "$created" ] || fail "OpenBao secret/$path metadata has no current version"
+  jq -e --arg c "$created" '(.status.refreshTime // "") as $r | $r != ""
+    and ($r | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) >= ($c | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601)' \
+    <<<"$external_secret" >/dev/null ||
+    fail "ExternalSecret $namespace/$owner last refreshed at $(jq -r '.status.refreshTime' <<<"$external_secret"), before OpenBao secret/$path current version ($created): Secret $secret_ref may hold a stale credential"
+}
+
+# Each robot's credential stored in OpenBao, as its consumer receives it, authenticates against
+# Harbor, and a wrong one does not.
 assert_robot_credentials_authenticate() {
-  local entry name path username password code
+  local entry name path secret_ref username password code
   for entry in "${ROBOTS[@]}"; do
-    IFS='|' read -r name path <<<"$entry"
-    username="$(openbao_field "$path" username)"
-    [ "$username" = "$name" ] || fail "OpenBao secret/$path username is '$username', expected $name"
-    password="$(openbao_field "$path" password)"
-    [ -n "$password" ] || fail "OpenBao secret/$path has no password"
+    IFS='|' read -r name path secret_ref <<<"$entry"
+    assert_delivers_current_openbao_version "$secret_ref" "$path"
+    username="$(secret_value "$secret_ref" username)"
+    [ "$username" = "$name" ] || fail "Secret $secret_ref username is '$username', expected $name"
+    password="$(secret_value "$secret_ref" password)"
+    [ -n "$password" ] || fail "Secret $secret_ref has no password"
 
     code="$(registry_login_status "$username" "$password")"
-    [ "$code" = 200 ] || fail "Harbor GET /v2/ rejects the $name credential stored in OpenBao (HTTP $code)"
+    [ "$code" = 200 ] || fail "Harbor GET /v2/ rejects the $name credential delivered from OpenBao in Secret $secret_ref (HTTP $code)"
     code="$(registry_login_status "$username" "not-the-robot-secret")"
     [ "$code" = 401 ] || fail "Harbor GET /v2/ did not refuse a wrong secret for $name (HTTP $code); the check proves nothing"
   done

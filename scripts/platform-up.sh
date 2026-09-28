@@ -572,5 +572,7 @@ ensure_dependency_track
 wait_for_convergence "$(jq -c '. + ["root"]' <<<"$WORKLOAD_APPLICATIONS")"
 "$REPO_ROOT/scripts/harbor-tofu.sh" configure
 replicate_governed_projects
+# Retention rules protect the tags of the pinned digests, which Harbor only knows once they are replicated.
+"$REPO_ROOT/scripts/harbor-tofu.sh" configure
 wait_for_convergence
 log "platform ready (kubeconfig: $PLATFORM_KUBECONFIG)"

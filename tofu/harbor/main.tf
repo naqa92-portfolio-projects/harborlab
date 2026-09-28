@@ -11,8 +11,32 @@ locals {
     dhi       = { project = "dhi-proxy", type = "docker-registry", url = "https://dhi.io" }
   }
 
+  catalog = yamldecode(file("${path.module}/../../images/catalog.yaml"))
+
   # Golden repositories in images/catalog.yaml order, the catalog being their single source.
-  golden_names = distinct([for image in yamldecode(file("${path.module}/../../images/catalog.yaml")).images : image.name])
+  golden_names = distinct([for image in local.catalog.images : image.name])
+
+  # Digests the platform runs or admits: the catalog golden images and the Harbor images of the workload
+  # manifests, keyed "<project>/<repository>@<digest>".
+  workloads_dir = "${path.module}/../../platform/workloads"
+  workload_image_refs = distinct(flatten([
+    for f in fileset(local.workloads_dir, "**/*.yaml") : [
+      for ref in regexall(
+        "${replace(trimprefix(local.harbor_url, "https://"), ".", "\\.")}/(golden|apps)/([a-z0-9._/-]+)@(sha256:[0-9a-f]{64})",
+        file("${local.workloads_dir}/${f}")
+      ) : "${ref[0]}/${ref[1]}@${ref[2]}"
+    ]
+  ]))
+  pinned_images = merge(
+    { for image in local.catalog.images : "golden/${image.name}@${image.digest}" => {
+      project = "golden", repository = image.name, digest = image.digest
+    } },
+    { for ref in local.workload_image_refs : ref => {
+      project    = split("/", ref)[0]
+      repository = trimprefix(split("@", ref)[0], "${split("/", ref)[0]}/")
+      digest     = split("@", ref)[1]
+    } },
+  )
 
   # Governed projects, pulled from GHCR. Harbor's github-ghcr adapter cannot list GHCR repositories:
   # a wildcard name filter fails every execution, so each filter names its repositories. No tag
@@ -182,7 +206,38 @@ resource "harbor_immutable_tag_rule" "governed" {
   tag_excluding = "sha256-*"
 }
 
-# Keeps the most recently pushed artifacts of each repository and every referrers fallback tag.
+# Tags of each pinned digest, read anonymously from the public governed projects. Retention selects
+# artifacts by tag only. A digest not replicated yet has no tag here: it is the newest artifact of its
+# repository, kept by the most-recent rule until `task harbor:configure` runs after its replication.
+data "http" "pinned_image" {
+  for_each = local.pinned_images
+
+  url             = "${local.harbor_url}/api/v2.0/projects/${each.value.project}/repositories/${replace(each.value.repository, "/", "%252F")}/artifacts/${each.value.digest}?with_tag=true"
+  request_headers = { Accept = "application/json" }
+
+  lifecycle {
+    postcondition {
+      condition     = contains([200, 404], self.status_code)
+      error_message = "Harbor answered ${self.status_code} for ${each.key}"
+    }
+  }
+}
+
+locals {
+  # project => repository => sorted tags of its pinned digests.
+  retained_tags = {
+    for project in keys(local.governed_projects) : project => {
+      for repository in distinct([for image in values(local.pinned_images) : image.repository if image.project == project]) :
+      repository => sort(distinct(flatten([
+        for key, image in local.pinned_images : try([for tag in jsondecode(data.http.pinned_image[key].response_body).tags : tag.name], [])
+        if image.project == project && image.repository == repository && data.http.pinned_image[key].status_code == 200
+      ])))
+    }
+  }
+}
+
+# Keeps the most recently pushed artifacts of each repository, every referrers fallback tag and every
+# digest pinned by images/catalog.yaml or the workload manifests.
 resource "harbor_retention_policy" "governed" {
   for_each = local.governed_projects
 
@@ -199,6 +254,16 @@ resource "harbor_retention_policy" "governed" {
     always_retain = true
     repo_matching = "**"
     tag_matching  = "sha256-*"
+  }
+
+  dynamic "rule" {
+    for_each = { for repository, tags in local.retained_tags[each.key] : repository => tags if length(tags) > 0 }
+    content {
+      always_retain      = true
+      repo_matching      = rule.key
+      tag_matching       = length(rule.value) == 1 ? rule.value[0] : "{${join(",", rule.value)}}"
+      untagged_artifacts = false
+    }
   }
 }
 

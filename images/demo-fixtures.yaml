@@ -1,0 +1,3 @@
+# Commit whose `fixtures` workflow run published the admission fixtures the demos submit: Harbor
+# replicates them and `task demo:*` looks them up by its immutable tag sha-<commit>, never by `e2e`.
+commit: "83736ee220499f3747e62e4d9b9ec5cf14a503ac"

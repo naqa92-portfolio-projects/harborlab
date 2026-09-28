@@ -9,6 +9,7 @@ SCENARIO="${1:?usage: $0 <scenario> <namespace>}"
 NAMESPACE="${2:?usage: $0 <scenario> <namespace>}"
 POD="demo-$SCENARIO"
 FIXTURES_REPLICATION=apps-demo-fixtures-from-ghcr
+FIXTURES_TAG="sha-$(yq -r '.commit' "$REPO_ROOT/images/demo-fixtures.yaml")"
 RUNTIME_DEMO=runtime-demo/runtime-demo
 # Docker Hub busybox 1.37.0, pinned so every run submits the same image.
 DOCKER_HUB_IMAGE=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
@@ -19,16 +20,15 @@ source "$REPO_ROOT/scripts/demo-lib.sh"
 demo_init
 kubectl get namespace "$NAMESPACE" -o name >/dev/null || die "namespace $NAMESPACE does not exist"
 
-# Digest reference of the admission fixture apps/$1:e2e in Harbor, replicated from GHCR when missing.
-# The execution fails as a whole when another fixture's immutable e2e tag moved on GHCR, even though
-# the missing one landed: the artifact lookup decides.
+# Digest reference of the admission fixture apps/$1:$FIXTURES_TAG in Harbor, replicated from GHCR when
+# missing; a failed replication ends the demo.
 harbor_fixture() {
-  harbor_api GET "/projects/apps/repositories/$1/artifacts/e2e"
+  harbor_api GET "/projects/apps/repositories/$1/artifacts/$FIXTURES_TAG"
   if [ "$HTTP_CODE" = 404 ]; then
-    (replicate "$FIXTURES_REPLICATION") >&2 || echo "demo:$SCENARIO: replication $FIXTURES_REPLICATION failed, looking up apps/$1 anyway" >&2
-    harbor_api GET "/projects/apps/repositories/$1/artifacts/e2e"
+    replicate "$FIXTURES_REPLICATION" >&2
+    harbor_api GET "/projects/apps/repositories/$1/artifacts/$FIXTURES_TAG"
   fi
-  [ "$HTTP_CODE" = 200 ] || die "Harbor has no apps/$1:e2e (HTTP $HTTP_CODE)"
+  [ "$HTTP_CODE" = 200 ] || die "Harbor has no apps/$1:$FIXTURES_TAG (HTTP $HTTP_CODE)"
   echo "$HARBOR_HOST/apps/$1@$(jq -r .digest "$WORK/body.json")"
 }
 

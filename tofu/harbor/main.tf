@@ -51,7 +51,10 @@ locals {
 
   # Non-compliant admission fixtures the `task demo:*` scenarios submit from Harbor `apps`, where only
   # admission can reject them (flattened: fixtures/unsigned lands as apps/unsigned).
+  # Only their immutable sha-<commit> tag of images/demo-fixtures.yaml and the referrers fallback tags are
+  # pulled: the moving `e2e` tag would conflict with Harbor's immutable tags.
   demo_fixtures_filter = "naqa92-portfolio-projects/harborlab/fixtures/{unsigned,foreign-signer,unknown-base,demo-deprecated-base,demo-eol-base}"
+  demo_fixtures_tag    = "{sha-${yamldecode(file("${path.module}/../../images/demo-fixtures.yaml")).commit},sha256-*}"
 
   # Harbor cron expressions carry a leading seconds field.
   replication_cron = "0 */15 * * * *"
@@ -166,6 +169,10 @@ resource "harbor_replication" "demo_fixtures" {
 
   filters {
     name = local.demo_fixtures_filter
+  }
+
+  filters {
+    tag = local.demo_fixtures_tag
   }
 }
 

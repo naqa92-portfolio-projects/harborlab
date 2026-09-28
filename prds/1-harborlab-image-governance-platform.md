@@ -43,8 +43,8 @@
 - At least 16 GiB RAM available to WSL — check: test "$(free -g | awk '/^Mem:/{print $2}')" -ge 16
 
 ## State
-phase: 2
-milestone: 9/10
+phase: 3
+milestone: 10/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
@@ -73,6 +73,7 @@ notes-m9: red d3b722b; M9 coder also fixes T9 (demo:runtime-shell runs once, no 
 resumed-m9: human (2026-09-28) chose catalogue A — genuine older golden versions (deprecated/eol) in images/catalog.yaml; tester adapts CAT-021 to multi-version catalog (running container required only for supported/deprecated). M9 coder 02128e9 3238658: docs 7/7 green; demo_scenarios 0/2 because demo:deprecated-base and demo:eol-base have no genuine deprecated/eol golden image — adding real older golden entries to images/catalog.yaml breaks observability.bats (CAT-021: yq select by name returns several digests; 'one running container per catalog image' impossible for an eol base) → human decision needed; the 7 other scenarios pass incl. negative control. M9 green not run yet; tester rework e3a7f05 (multi-version catalog in CAT-021/023/013); sequence: coder older golden versions + catalog + demo:vex fresh-cluster failure → tester demo fixtures → coder publish/replicate → green
 notes-m9b: coder 22ad6dc 6892f2b 49142fb 719b9af e9f4b0a — catalog python 3.13 supported, python 3.10 deprecated (tag 3.10-sha-6892f2b), java 21 supported, java 26 eol (genuine non-LTS EOL 2026-09-15, newer than 21: DHI python 3.9 not usable — debian13 401, debian12 fails Trivy CRITICAL); demo:vex root cause = single VEX worker behind replication bursts → 8 workers; policies.yml waits for Kyverno webhook before apply; tester fixtures 16e238a (demo-deprecated-base FROM python 3.10, demo-eol-base FROM java 26); coder next: publish/replicate/wire
 notes-m9c: coder fbc49f5 835a56f — demo_scenarios 2/2 (9 scenarios + negative control), docs 7/7; M9 green next, then pause before review
+paused-before-review: human asked (2026-09-28) not to start phase 3 until they resume; all 10 milestones green + load-bearing; findings T1–T13 pending for the review
 pr: none
 findings:
 - T1 pending — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
@@ -101,7 +102,7 @@ demo:
 - [x] M6 — Vulnerability management: Dependency-Track 5.1 on CNPG, Harbor webhook → `dt-bridge` → DT SBOM upload, DHI OpenVEX → CycloneDX VEX conversion, pytest coverage (dépend de M5)
 - [x] M7 — Runtime: Kubescape operator (scan, CIS, runtime threat detection, VEX generation) with runtime OpenVEX forwarded to DT (dépend de M6)
 - [x] M8 — Observability: VictoriaMetrics, VictoriaLogs, Grafana image-posture dashboard, Policy Reporter UI, memory budget verified (dépend de M7)
-- [ ] M9 — Docs & demo: README, ARCHITECTURE, ADRs, THREAT-MODEL, DEMO runbook, ROADMAP (air-gap bundle, Gatekeeper/Rego comparison, Buildah builds, chart relocation as OCI), all `task demo:*` scenarios green (dépend de M8)
+- [x] M9 — Docs & demo: README, ARCHITECTURE, ADRs, THREAT-MODEL, DEMO runbook, ROADMAP (air-gap bundle, Gatekeeper/Rego comparison, Buildah builds, chart relocation as OCI), all `task demo:*` scenarios green (dépend de M8)
 
 ## Context
 

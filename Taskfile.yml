@@ -54,6 +54,17 @@ tasks:
     cmds:
       - ./scripts/lint.sh {{.CLI_ARGS}}
 
+  release:repin:
+    desc: >-
+      After merging to main: re-pin app Dockerfiles to the supported catalog digests, then
+      platform/workloads and the demo fixtures commit to the images built at HEAD, in dependency order;
+      opens a pull request per step that changed something (release-repin.yml runs the same steps
+      automatically on the pushes that can need them)
+    cmds:
+      - ./scripts/release-repin.sh dockerfiles
+      - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh workloads
+      - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh fixtures
+
   demo:unsigned:
     desc: 'Submit a pod on an unsigned Harbor image; workload-image-signature denies it (NAMESPACE=<ns>)'
     cmds:

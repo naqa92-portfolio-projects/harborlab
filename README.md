@@ -79,6 +79,27 @@ Web interfaces, all under the local CA generated in `.local/ca/` (import `ca.crt
 | `task catalog:generate` / `task catalog:check` | Regenerate / check the Kyverno params and catalog doc from `images/catalog.yaml` |
 | `task lint` | The platform lint the CI runs on every pull request |
 | `task demo:<scenario>` | One governance scenario, see [the demo runbook](docs/DEMO.md) |
+| `task release:repin` | Re-pin the pins left behind by a merge to `main`, see "After merging" below |
+
+## After merging
+
+Admission and `dt-bridge` trust `build-image.yml@refs/heads/main` only (see "Environment-specific trust"
+in the [threat model](docs/THREAT-MODEL.md)): a pull request built on a `prd-*` branch merges images
+signed by that branch's own identity, which is untrusted once the branch is gone. `release-repin.yml`
+brings every pin forward, in dependency order, on the pushes to `main` that can need it:
+
+1. `dockerfiles`: once golden.yml's own `catalog` job has moved `images/catalog.yaml`'s `supported`
+   digests, re-pins the app Dockerfile `FROM` lines built on them and opens a pull request.
+2. `workloads`: once that pull request merges and `hello-java.yml` / `dt-bridge.yml` / `runtime-demo.yml`
+   have rebuilt on the re-pinned base, re-pins `platform/workloads/*/*.yaml` to the images they published
+   and opens a pull request.
+3. `fixtures`: once `fixtures.yml` has published the admission fixtures for a commit on `main`, re-pins
+   `images/demo-fixtures.yaml`'s commit and opens a pull request.
+
+Each step is idempotent (a no-op pull request is never opened) and only ever opens a pull request: none
+of them push to `main` directly. `devbox run -- task release:repin` runs the same three steps for the
+current `HEAD`, for a manual re-pin (for example right after merging, without waiting for the app and
+fixtures builds `release-repin.yml`'s later steps wait on).
 
 ## Memory budget
 

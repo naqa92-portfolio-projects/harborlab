@@ -78,6 +78,16 @@ trusts exactly that one additional ref, and only in that environment:
   with `scripts/render-policies.sh <revision> <out-dir>`, since its fixtures are signed on that branch.
 - A platform deployed from `main` renders the committed identities unchanged.
 
+A platform deployed from `main` right after a `prd-*` branch merges is the same situation from the other
+side: the images its pins name (`images/catalog.yaml`'s `supported` digests, the app Dockerfile `FROM`
+lines, `platform/workloads/*/*.yaml` and `images/demo-fixtures.yaml`) were signed on that `prd-*` branch,
+which `main`'s committed identities no longer trust once it merges. `release-repin.yml` re-pins them, in
+dependency order, on the pushes to `main` that can need it, opening a pull request per step instead of
+pushing to `main` directly; see [README "After merging"](../README.md#after-merging) for the flow and
+`devbox run -- task release:repin` for a manual run of the same steps. Never widen the committed identity
+to also trust `prd-*` on `main` to work around this: that is the R2/T2 pattern this environment-specific
+trust exists to avoid on the environment every other consumer of the platform trusts by default.
+
 The alternative for a bank is key-based signing with keys held in a KMS or HSM (cosign supports AWS KMS,
 GCP KMS, Azure Key Vault and HashiCorp Vault / OpenBao Transit through `--key <kms-uri>`), optionally with
 a private Sigstore deployment (Fulcio and Rekor operated in-house). Admission then verifies against the

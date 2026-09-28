@@ -107,6 +107,7 @@ findings:
 - A8 pending — Harbor webhook unauthenticated, no NetworkPolicies (queue flooding, forged VictoriaLogs lines skewing dashboards)
 - A9 pending — dt-bridge Dockerfile installs uv from PyPI without hashes
 - R9 pending — ADR 0007 still describes the old main|prd-* identity; needs an amendment/superseding note for main-only + repository binding + environment-specific revision trust (B4)
+demo:
 
 ## Milestones
 

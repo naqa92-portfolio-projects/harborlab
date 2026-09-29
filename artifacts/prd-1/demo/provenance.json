@@ -1,0 +1,9 @@
+{
+  "commit": "3bf48961cf71fec568df0b18c4e08718fa1f6d4e",
+  "recorded_at": "2026-09-29T08:41:56Z",
+  "journeys": {
+    "P1": "8/8 confirmed",
+    "P2": "6/6 confirmed",
+    "P3": "7/7 confirmed (step 6 on retry after Grafana OOMKilled)"
+  }
+}

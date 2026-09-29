@@ -66,13 +66,14 @@ spec:
                     path: /var/lib/grafana/dashboards/harborlab
           dashboardsConfigMaps:
             harborlab: grafana-dashboard-image-posture
-          # Grafana 13 settles near 250 Mi; below its GOMEMLIMIT (90% of the limit) its start-up spins in GC.
+          # Grafana 13 settles near 250 Mi; below its GOMEMLIMIT (90% of the limit) its start-up spins in GC,
+          # and Explore on a VictoriaLogs query was OOMKilled at 448Mi.
           resources:
             requests:
               cpu: 50m
-              memory: 256Mi
+              memory: 384Mi
             limits:
-              memory: 448Mi
+              memory: 768Mi
           # Start-up (plugin install, storage migrations) exceeds the default 60 s liveness delay.
           startupProbe:
             httpGet:

@@ -1,6 +1,6 @@
 # PRD #1 — harborlab: Image Governance Platform
 
-**Issue**: [#1](https://github.com/naqa92-portfolio-projects/harborlab/issues/1) · **Priority**: High · **Status**: Draft
+**Issue**: [#1](https://github.com/naqa92-portfolio-projects/harborlab/issues/1) · **Priority**: High · **Status**: Complete (2026-09-29)
 
 ## Acceptance criteria
 
@@ -43,12 +43,12 @@
 - At least 16 GiB RAM available to WSL — check: test "$(free -g | awk '/^Mem:/{print $2}')" -ge 16
 
 ## State
-phase: 7
+phase: done
 milestone: 10/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
-gate: merge pending — waiting for the human (/prd-done 1, squash merge with an explicit message without Claude-Session trailer)
+gate: none — merged by the human via /prd-done 1 (squash)
 red_ahead: none
 decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest, not tag; wait ≤240s (Harbor ManifestCache 10×20s); test image shares no layer with the node — human, 2026-09-26 (test amended aa48447, 3/3 pass on coder commits ca0d758..9927239)
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret

@@ -9,6 +9,20 @@
 | Buildah builds | Rootless, daemonless builds (Buildah or Podman) are common where Docker is not allowed on build agents | A `build-image.yml` variant building with Buildah, keeping the same SBOM, provenance, scan and signing steps, so admission cannot tell the builder apart |
 | Chart relocation as OCI | Helm charts are pulled from upstream repositories at sync time, outside Harbor governance | Relocate every chart into Harbor as an OCI artifact (signed, scanned, immutable) and point the Argo CD Applications at `oci://harbor…`, the chart counterpart of image replication |
 
+## Known debt after the first version
+
+| Item | Why it matters | Direction |
+|---|---|---|
+| Re-pin pull requests run no CI | Pull requests opened by `golden.yml` and `release-repin*.yml` with `GITHUB_TOKEN` trigger no `pull_request` workflow, so digest bumps merge unchecked | Open them with a GitHub App installation token (`actions/create-github-app-token`), then make the CI checks required on `main` |
+| Unsigned tag after a failed build | `build-image.yml` pushes before Trivy and signing; a failure leaves an unsigned tag that re-runs never re-sign, so the commit must change | Push by digest only after scan and signature pass, or re-sign a verified own-built digest on re-run |
+| dt-bridge delivery guarantees | Forwarded-VEX state lives in memory (a restart resends everything), failed uploads are not retried, and events beyond the 200-SBOM queue are dropped with a 503 | Persist delivery state, retry with backoff, let Harbor redeliver instead of dropping |
+| Node restart resilience | After a stopped kind node, OpenBao comes back sealed and some controllers do not reconverge; recovery is `task down && task up` | Auto-unseal (Transit or static seal) and readiness-gated restarts of the controllers that lose their leases |
+| Policy Reporter `error` results | Every namespace carries one `error` result for the Kyverno ImageValidatingPolicies, with no visible cause | Find which policy/resource pair errors (Kyverno background scan) and fix or exclude it |
+| Deprecated-base warning shown as `fail` | CEL policies report the deprecated golden base as `fail` in PolicyReports while admission shows a Warning | Report it as `warn` (policy `validationActions`/reporting mapping) so dashboards match the admission outcome |
+| Posture dashboard and consoles ergonomics | Truncated panel titles, runtime alert panel dominated by anomaly noise, image-independent rules counted per image, Harbor typing SBOM/provenance accessories as `signature.cosign`, Dependency-Track project list flooded with versions | Dashboard layout pass; filter runtime rules; mark older DT project versions inactive on each new version |
+| Grafana memory headroom | Explore on VictoriaLogs peaks at ~640 Mi for a 768 Mi limit | Re-measure after Grafana upgrades; raise the limit within the 12 GiB budget if the peak grows |
+| Vendor signatures on platform images | Cilium and Argo CD images run only in excluded bootstrap namespaces, so their vendor-signature rules never meet a real pod | Admit those components through a verified path (image verification at bootstrap, or moving them out of the excluded tier once Kyverno is up) |
+
 ## Upstream issues tracked
 
 | Upstream issue | Impact on harborlab | Unblocks |

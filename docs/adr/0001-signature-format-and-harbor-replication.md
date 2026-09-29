@@ -25,8 +25,9 @@ published by `.github/workflows/spike.yml`.
    `buildDefinition.resolvedDependencies`, which the catalog policy (M4) reads.
    `actions/attest-build-provenance` is not used: it stores to the GitHub attestations API and
    signs with a different identity than the workflow.
-3. **Harbor replication copies the referrers fallback tag.** The pull-replication rule filters
-   tags with `{<tag>,sha256-*}` and flattens the namespace (`dest_namespace_replace_count: -1`).
+3. **Harbor replication copies the referrers fallback tag.** The spike's pull-replication rule filters
+   tags with `{<tag>,sha256-*}`; the governed `golden` and `apps` rules have no tag filter, which replicates
+   the fallback tags with the images. Both flatten the namespace (`dest_namespace_replace_count: -1`).
 4. **Kyverno trusts Harbor's CA through `SSL_CERT_DIR`**, not through the chart's
    `caCertificates`.
 
@@ -46,7 +47,8 @@ published by `.github/workflows/spike.yml`.
 
 ## Consequences
 
-- Replication rules for `golden` and `apps` (M2) must include `sha256-*` in their tag filter.
+- Replication rules for `golden` and `apps` must replicate the `sha256-*` fallback tags: they carry no tag
+  filter.
 - Registry clients and Kyverno need the platform CA; the CA is generated at runtime and never
   committed.
 - A proxy-cache check that queries Harbor by tag must allow for the trimmed-index delay

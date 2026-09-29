@@ -5,8 +5,8 @@ workaround, the upstream cause, and the condition under which the workaround can
 
 ## goharbor provider does not read back replication filter drift
 
-`tofu/harbor/main.tf` builds `harbor_replication` filters from `images/catalog.yaml` (the
-`{golden,apps}` name filters of `harbor_replication.governed`) and, for the demo fixtures
+`tofu/harbor/main.tf` builds `harbor_replication` filters (the `golden` name filter is derived from
+`images/catalog.yaml`, the `apps` one is hard-coded, both in `harbor_replication.governed`) and, for the demo fixtures
 replication, from two separate `filters` blocks — one `name`, one `tag` — because a single
 `filters` block loses whichever attribute is not `name` when the provider drops filter attributes
 other than `name`/`tag` from its own state read. Both issues mean OpenTofu's plan stays empty after
@@ -54,9 +54,10 @@ Kubescape's `kubescape/storage` API server returns `ContainerProfile` objects wi
 a plain `kubectl get -o json` / list call; the `spec` (the statements dt-bridge and the runtime demo
 need) is populated only when the request carries `resourceVersion=fullSpec`
 (`pkg/registry/file/storage.go`). `platform/apps/templates/runtime-demo.yaml` also has Argo CD
-ignore `/spec` on `ContainerProfile` (`ignoreDifferences`), because the live object's spec is a hash
-Kubescape computes from observed behaviour, not something git can own; only the resource's existence
-and non-spec fields are tracked.
+ignore `/spec` on `ContainerProfile` (`ignoreDifferences`), so Argo CD cannot diff the spec. The spec is
+authored in git (`platform/workloads/runtime-demo/containerprofile.yaml`), and the annotation
+`harborlab.io/spec-sha256` (the SHA-256 of the canonical JSON of the spec) is the sync trigger: it must
+change with the spec for a git change to sync. Nothing checks that the annotation matches the spec.
 
 Upstream: no public issue found; behaviour observed directly in
 `kubescape/storage`'s file-backed API server (undocumented `resourceVersion=fullSpec` requirement),
@@ -119,9 +120,10 @@ override and its custom manager rule can be removed together.
 
 ## Kyverno `config.preserve: false`
 
-`platform/apps/templates/kyverno.yaml:25` sets `config.preserve: false` on the Kyverno Helm release,
-so Argo CD prunes the `kyverno` namespace's default `ConfigMap`/`Secret` on an uninstall instead of
-leaving orphans behind for a bootstrap that always starts from `task up`/`task down`.
+`platform/apps/templates/kyverno.yaml:23` sets `config.preserve: false` on the Kyverno Helm release,
+because the chart's post-delete hook keeps the Application out of sync and blocks Argo CD from pruning
+it; the `kyverno` namespace's default `ConfigMap`/`Secret` are then pruned on an uninstall instead of
+being left behind.
 
 Upstream: not a defect, a deliberate chart default trade-off (the chart preserves that config by
 default for clusters where Kyverno management is decoupled from its install lifecycle); chart at
@@ -174,11 +176,11 @@ GHCR-specific listing credential), so a single owner-level filter replaces the e
 
 ## Harbor chart's proxy-cache registry types omit `quay`
 
-`platform/apps/templates/harbor.yaml:53` overrides the Harbor chart's `CACHE_ENABLED_REGISTRY_TYPES`
-ConfigMap value (`docker-hub,harbor,azure-acr,ali-acr,aws-ecr,google-gcr,docker-registry,github-ghcr,jfrog-artifactory,quay`)
-because the chart's own default list omits `quay`, even though Harbor core itself supports a `quay`
-proxy-cache registry type; without the override, creating a `quay` proxy-cache project through the
-chart-managed core fails validation.
+`platform/apps/templates/harbor.yaml:55` sets the environment variable
+`PERMITTED_REGISTRY_TYPES_FOR_PROXY_CACHE` to `docker-hub,harbor,azure-acr,ali-acr,aws-ecr,google-gcr,docker-registry,github-ghcr,jfrog-artifactory,quay`,
+which overrides the chart's ConfigMap list of proxy-cache registry types because that list omits `quay`,
+even though Harbor core itself supports a `quay` proxy-cache registry type; without the override, creating
+a `quay` proxy-cache project through the chart-managed core fails validation.
 
 Upstream: no public issue found against `goharbor/harbor-helm`; observed directly against the
 chart's default `core.configureUserSettings`/env template, tracker at
@@ -225,8 +227,8 @@ then be narrowed to the real backend port like every other egress rule in the fi
 
 ## Argo CD panics ("counter cannot decrease") when the host clock steps backward
 
-Every Argo CD `Application` template under `platform/apps/templates/*.yaml` sets
-`syncOptions: [ServerSideApply=true]`, because Argo CD 3.5.3's client-side apply keeps a monotonic
+Every Argo CD `Application` template under `platform/apps/templates/*.yaml` except `dt-bridge`,
+`hello-java` and `runtime-demo` sets `syncOptions: [ServerSideApply=true]`, because Argo CD 3.5.3's client-side apply keeps a monotonic
 resourceVersion-derived counter that panics when the WSL2 host clock steps backward (observed during
 `task up`/`task down` cycles on a suspended/resumed WSL2 VM); server-side apply does not use that
 counter. The workaround is not complete: an occasional manual `argocd app sync` is still needed after
@@ -237,4 +239,17 @@ not reproduced outside this environment); tracker at https://github.com/argoproj
 
 Exit condition: Argo CD no longer panics on a clock step (fixed upstream, or this platform stops
 running on a host whose clock can step backward); until then `ServerSideApply=true` stays the default
-for every Application and a manual resync remains the documented recovery.
+for the other Applications and a manual resync remains the documented recovery.
+
+## Pull requests opened with `GITHUB_TOKEN` trigger no CI
+
+`.github/workflows/golden.yml` and `.github/workflows/release-repin.yml` open pull requests with the
+workflow `GITHUB_TOKEN`. GitHub does not start `pull_request` workflows for events created with that token,
+so the required status checks of the `main` ruleset never report and block the merge until a maintainer
+triggers CI on the branch (an empty commit pushed by a person, or closing and reopening the pull request).
+
+Upstream: [GitHub documentation, triggering a workflow from a workflow](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow).
+The standard remedy is to open these pull requests with a GitHub App installation token.
+
+Exit condition: the workflows open their pull requests with a GitHub App installation token, so CI runs
+without a maintainer.

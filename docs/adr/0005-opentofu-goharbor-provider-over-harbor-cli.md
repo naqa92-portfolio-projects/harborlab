@@ -31,13 +31,13 @@ Crossplane control plane costs memory on a budget-limited single node.
 - Robot secrets are generated in OpenBao and passed write-only (`secret_wo`, never in state).
 - The state stays local, git-ignored and encrypted with the OpenBao Transit key provider.
 - Replication filters name their repositories explicitly: Harbor's `github-ghcr` adapter cannot list
-  GHCR repositories, so wildcard filters fail. The golden filter is derived from `images/catalog.yaml`.
+  GHCR repositories, so wildcard filters fail. The golden filter is derived from `images/catalog.yaml`; the `apps` filter is hard-coded.
 
 ## Consequences
 
 - A second `task harbor:configure` has an empty plan; drift is visible with `task harbor:plan`.
-- The registry credential of the `dhi.io` proxy cache has no write-only attribute: it is the one secret in
-  the encrypted state.
+- The registry credential of the `dhi.io` proxy cache and the webhook Bearer token have no write-only
+  attribute: they are the secrets in the encrypted state.
 - The provider does not detect every out-of-band change (replication filters edited in the UI are not seen
   as drift; `-replace` is needed).
 - Rotating a robot secret requires bumping `secret_wo_version`.

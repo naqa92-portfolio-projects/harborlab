@@ -17,8 +17,9 @@ no Harbor integration.
 - Dependency-Track 5.1 on CloudNativePG is the triage source of truth.
 - `dt-bridge`, a small Python (FastAPI) service built through the golden path itself, connects it:
   - on each Harbor webhook (push or replication into `golden`/`apps`) it reads the image's CycloneDX
-    attestation from Harbor's referrers, extracts the SBOM unchanged and uploads it to project
-    `<harbor project>/<repository>`, version = tag;
+    attestation from Harbor's referrers, verifies its Sigstore bundle against the build identity, extracts
+    the SBOM unchanged and uploads it to project `<harbor project>/<repository>`, version = tag; no SBOM is
+    uploaded when the SLSA provenance fails verification;
   - it reads the DHI base from the verified SLSA provenance, fetches that base's DHI OpenVEX, converts its
     `not_affected` statements to a CycloneDX VEX on the attested SBOM's components (Debian source packages
     resolved to their binary packages) and uploads it once Dependency-Track has analysed the SBOM;

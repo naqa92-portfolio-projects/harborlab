@@ -20,7 +20,11 @@ workload chain of trust on the components that implement admission would create 
   - `harborlab.io/tier=workload`: full chain enforced (build identity signature and attestations, catalog
     base, labels, Harbor `golden`/`apps` only, Pod Security `restricted`, digest pinning);
   - `harborlab.io/tier=platform`: registry allow-list and vendor signatures (Kyverno, Cilium, Argo CD)
-    reported in `Audit` mode;
+    reported in `Audit` mode. The Cilium and Argo CD rules only apply to those images in a platform-tier
+    namespace; here they run only in the excluded `cilium` and `argocd` namespaces, so in practice only
+    Kyverno's images meet the rule;
+  - no tier (a namespace without `harborlab.io/tier`, or with another value): every pod denied
+    (`tier-required`), so a missing label never turns enforcement off;
   - bootstrap (`kube-system`, `cilium`, `argocd`, `kyverno`): excluded by name, documented in the
     [threat model](../THREAT-MODEL.md).
 

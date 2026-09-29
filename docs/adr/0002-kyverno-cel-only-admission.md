@@ -19,6 +19,8 @@ platform namespaces, and be testable offline in CI. Kyverno 1.19 offers two poli
   Workload policies: `workload-image-signature`, `workload-golden-base`, `workload-registry`,
   `workload-image-labels` (`Deny`), `workload-golden-base-deprecated` (`Warn` + `Audit`) and the
   `workload-pod-security` MutatingPolicy that labels workload namespaces Pod Security `restricted`.
+  Tier policies: `tier-label` (only platform administrators set `harborlab.io/tier`) and `tier-required`
+  (every pod in a namespace without a valid tier is denied).
   Platform policies (`platform-registry-allow-list`, `platform-vendor-signatures`) only `Audit`.
 - Pod Security `restricted` is native Pod Security Admission, not re-implemented as a policy.
 - Policies read their parameters from generated ConfigMaps (`kyverno/golden-images` from
@@ -26,7 +28,7 @@ platform namespaces, and be testable offline in CI. Kyverno 1.19 offers two poli
 - `ImageValidatingPolicy` rewrites admitted workload images to their digest (`mutateDigest`).
 - Deny policies run with `failurePolicy: Fail`; the deprecation warning runs with `Ignore`.
 - Policies are tested with `kyverno test` (one suite per policy) and Chainsaw on an ephemeral kind cluster
-  in CI on every pull request touching `policies/**`.
+  in CI on every pull request (`policies.yml` has no path filter on `pull_request`).
 
 ## Consequences
 

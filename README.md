@@ -21,14 +21,14 @@ the rest (build, attestation, registry, admission, runtime detection and triage)
 | Docker daemon running (kind runs the cluster as a Docker container) | `docker info >/dev/null 2>&1` |
 | GitHub CLI (`gh`) logged in | `gh auth status` |
 | Public repository: keyless signing identity, public GHCR images, OpenSSF Scorecard | `gh repo view --json visibility -q .visibility` |
-| A repository ruleset protecting `main` (required reviews, required status checks, no force-push/deletion) and restricting who can create `prd-*` branches, so the signing identity (`build-image.yml@refs/heads/main`, plus the one deployed `prd-*` branch) is only as trusted as who can push those refs — a human sets this in repository settings, it is not automated | `gh api repos/{owner}/{repo}/rulesets` |
+| A repository ruleset protecting `main` (required reviews, required status checks, no force-push/deletion) and restricting who can create `prd-*` branches, so the signing identity (`build-image.yml@refs/heads/main`, plus the one revision the platform is deployed from when it is not `main`) is only as trusted as who can push those refs: the extra trust follows whatever revision is deployed, not only a `prd-*` branch, so restricting `prd-*` creation does not bound it — a human sets this in repository settings, it is not automated | `gh api repos/{owner}/{repo}/rulesets` |
 | A Docker account token for `dhi.io` in the git-ignored `.env` as `DHI_TOKEN`, with its account name as `DHI_USERNAME` | `grep -q '^DHI_TOKEN=.' .env && grep -q '^DHI_USERNAME=.' .env` |
 | The same `DHI_TOKEN` and `DHI_USERNAME` as GitHub Actions secrets (golden image builds) | `gh secret list` |
 | At least 16 GiB of RAM available to Docker (WSL included) | `free -g` |
 
 The ruleset protects who can push to this repository's own `main`/`prd-*` refs; it does not cover
 another repository calling `build-image.yml` as a reusable workflow — that caller is restricted
-separately, by the `github.repository` job guard in `build-image.yml` (R2).
+separately, by the `github.repository` job guard in `build-image.yml`.
 
 `.env` is git-ignored and only read by the Taskfile; `task up` seeds its values into OpenBao, from where
 External Secrets delivers them to the cluster. Never commit it.
@@ -50,7 +50,9 @@ devbox run -- task down   # delete the cluster and its isolated kubeconfig
 
 `task up` creates the kind cluster `harborlab` with a kubeconfig of its own, `.kube/harborlab.yaml`
 (git-ignored; `export KUBECONFIG=$PWD/.kube/harborlab.yaml`). It installs Cilium and Argo CD with Helm,
-then Argo CD deploys everything else from this repository at the checked-out branch. It configures Harbor
+then Argo CD deploys everything else from this repository at the checked-out branch, as pushed to `origin`
+(`HARBORLAB_REVISION=<revision>` overrides the revision; unpushed local commits only raise a warning, since
+Argo CD syncs the `origin` copy). It configures Harbor
 with OpenTofu (`task harbor:configure`), replicates the golden and application images from GHCR, and exits
 0 only after every Argo CD Application has been Synced and Healthy for 60 consecutive seconds. A fresh
 run takes about 15 minutes.
@@ -95,11 +97,19 @@ brings every pin forward, in dependency order, on the pushes to `main` that can 
    and opens a pull request.
 3. `fixtures`: once `fixtures.yml` has published the admission fixtures for a commit on `main`, re-pins
    `images/demo-fixtures.yaml`'s commit and opens a pull request.
+4. `e2e-params`: re-pins the E2E fixture Dockerfiles and the Kyverno E2E params to the `supported` catalog
+   digests and opens a pull request. It has its own workflow, `release-repin-e2e.yml`, triggered by changes
+   to those files and to `images/catalog.yaml`.
 
 Each step is idempotent (a no-op pull request is never opened) and only ever opens a pull request: none
-of them push to `main` directly. `devbox run -- task release:repin` runs the same three steps for the
+of them push to `main` directly. `devbox run -- task release:repin` runs the same four steps for the
 current `HEAD`, for a manual re-pin (for example right after merging, without waiting for the app and
 fixtures builds `release-repin.yml`'s later steps wait on).
+
+Pull requests opened with the workflow `GITHUB_TOKEN` (`golden.yml`'s catalog pull request, the re-pin pull
+requests) trigger no `pull_request` workflow, so the required status checks of the `main` ruleset stay
+pending and block the merge until a maintainer triggers CI on the branch. The standard remedy, a GitHub
+App installation token, is described in [Workarounds](docs/WORKAROUNDS.md).
 
 ## Memory budget
 
@@ -115,6 +125,6 @@ kubectl top nodes
 cgroup statistics): resident memory plus the active page cache, which the kernel does not reclaim first.
 Page cache is a large share here: containerd's image layers, the Kubescape Grype vulnerability database
 and the PostgreSQL buffers of Harbor and Dependency-Track all sit in it. A fresh platform measures about
-10.0–10.4 GiB, under the 12 GiB budget. `docker stats harborlab-control-plane` shows the same cgroup from
-Docker's side and can differ from `kubectl top nodes`, which is the reference. The platform components
-carry memory limits sized against this budget.
+10.0–10.4 GiB and the recorded peak is 10708 Mi, under the 12 GiB budget. `docker stats
+harborlab-control-plane` shows the same cgroup from Docker's side and can differ from `kubectl top nodes`,
+which is the reference. The platform components carry memory limits sized against this budget.

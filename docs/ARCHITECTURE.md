@@ -16,16 +16,16 @@ Policy Reporter · Grafana (VictoriaMetrics, VictoriaLogs) ◄── Kyverno rep
 ```
 
 1. **Golden images** (`images/golden/<name>`) are a thin layer on a Docker Hardened Image: governance labels
-   (`org.opencontainers.image.*`, `io.harborlab.*`) and a non-root user. `golden.yml` verifies the DHI base
-   signature, then calls `build-image.yml`. `images/catalog.yaml` is their single source of truth: name,
+   (`org.opencontainers.image.*`, `io.harborlab.*`) and a non-root user. `golden.yml` calls `build-image.yml`,
+   which verifies the signature of any `dhi.io` base against the pinned DHI key. `images/catalog.yaml` is their single source of truth: name,
    version, digest, status (`supported`, `deprecated`, `eol`) and dates. `task catalog:generate` derives the
    Kyverno params ConfigMap `kyverno/golden-images` and [the catalog doc](golden-images.md) from it; the
    platform CI fails when they drift.
 2. **Builds** go through `.github/workflows/build-image.yml`: Buildx build, SBOMs in CycloneDX and SPDX
-   (syft), a SLSA v1 provenance recording the base image digest, a blocking Trivy scan that applies the
-   VEX statements published with the base (`--vex oci`), then cosign keyless signing and attestation
-   (Sigstore bundles, stored as OCI referrers) with the workflow's GitHub OIDC identity. Images are pushed to
-   GHCR.
+   (syft), a SLSA v1 provenance recording the base image digest, then the push to GHCR, a Trivy scan that
+   applies the VEX statements published with the base (`--vex oci`) and blocks only on fixable CRITICAL
+   vulnerabilities, and last cosign keyless signing and attestation (Sigstore bundles, stored as OCI
+   referrers) with the workflow's GitHub OIDC identity.
 3. **Harbor** pull-replicates GHCR into the `golden` and `apps` projects every 15 minutes (the cosign
    referrers fallback tags `sha256-*` included), with immutable tags, retention, vulnerability scanning on
    push and deployment security. Its configuration is OpenTofu code (`tofu/harbor`, [ADR 0005](adr/0005-opentofu-goharbor-provider-over-harbor-cli.md)).
@@ -33,10 +33,11 @@ Policy Reporter · Grafana (VictoriaMetrics, VictoriaLogs) ◄── Kyverno rep
    behind transparent containerd mirrors ([ADR 0006](adr/0006-transparent-mirror-and-trust-tiers.md)).
 4. **Admission** is Kyverno CEL policies ([ADR 0002](adr/0002-kyverno-cel-only-admission.md)) plus native Pod
    Security Admission, per trust tier (see the [threat model](THREAT-MODEL.md)).
-5. **Triage**: each image pushed or replicated into Harbor triggers a webhook to `dt-bridge`, which uploads
-   the SBOM attested at build time to Dependency-Track (project `<harbor project>/<repository>`, version = tag),
-   and converts the DHI OpenVEX of the base named by the SLSA provenance into a CycloneDX VEX
-   ([ADR 0004](adr/0004-dependency-track-and-dt-bridge.md)).
+5. **Triage**: each image pushed or replicated into Harbor triggers a webhook to `dt-bridge`, which verifies
+   the Sigstore bundles of its attestations against the build identity, uploads the SBOM attested at build
+   time to Dependency-Track (project `<harbor project>/<repository>`, version = tag), and converts the DHI OpenVEX of the base named by the SLSA provenance into a CycloneDX VEX
+   ([ADR 0004](adr/0004-dependency-track-and-dt-bridge.md)). An image whose SLSA provenance fails
+   verification has no SBOM uploaded.
 6. **Runtime**: the Kubescape operator scans images in the cluster with Grype, checks CIS/NSA controls,
    raises runtime alerts against container profiles, and produces runtime OpenVEX documents that
    `dt-bridge` forwards to Dependency-Track ([ADR 0003](adr/0003-kubescape-over-trivy-operator-and-falco.md)).
@@ -61,16 +62,17 @@ Policy Reporter · Grafana (VictoriaMetrics, VictoriaLogs) ◄── Kyverno rep
 | Observability | metrics-server, VictoriaMetrics, VictoriaLogs, Grafana, Policy Reporter | `platform/observability`, `platform/apps/templates` |
 
 Argo CD syncs the Applications of `root` by sync wave, each wave once the previous one is Healthy:
-0 operators and OpenBao, 1 trust-manager and platform config (local CA), 2 Kyverno and Harbor, 3 Kyverno
-policies, Kubescape and observability, 4 workloads. No workload object exists before admission does.
+0 operators and OpenBao, 1 trust-manager and platform config (local CA), 2 Kyverno, Harbor and
+Dependency-Track, 3 Kyverno policies, Kubescape and observability, 4 workloads. No workload object exists before admission does.
 
 ## Trust tiers
 
 | Tier | Namespaces | Admission |
 |---|---|---|
 | Workload | labelled `harborlab.io/tier=workload` | Enforced: signature and attestations by `build-image.yml`, catalog base, labels, Harbor `golden`/`apps` only, Pod Security `restricted`, digest pinning |
-| Platform | labelled `harborlab.io/tier=platform` | Audited: registry allow-list, vendor signatures (Kyverno, Cilium, Argo CD) |
+| Platform | labelled `harborlab.io/tier=platform` | Audited: registry allow-list, vendor signatures (Kyverno, Cilium, Argo CD; in practice only Kyverno's images meet this rule, see the [threat model](THREAT-MODEL.md#trust-tiers)) |
 | Bootstrap | `kube-system`, `cilium`, `argocd`, `kyverno` | Excluded by name |
+| None | any other namespace (no `harborlab.io/tier`, or another value) | Every pod denied (`tier-required`) |
 
 ## Workloads
 

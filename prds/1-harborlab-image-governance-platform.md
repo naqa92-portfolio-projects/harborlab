@@ -176,8 +176,8 @@ Kubescape (scan, CIS, runtime alerts, runtime OpenVEX) ──► dt-bridge ─�
 | Signatures/attestations (cosign classic vs Sigstore bundle / OCI referrers) not preserved by GHCR → Harbor replication, or not readable by Kyverno | M0 spike before any other work; ADR records the chosen format |
 | Kyverno CEL cannot read image config labels | Validate in M4; fallback: CI check + attested label set |
 | Kubescape VEX generation is experimental (~2 min observation, `docker.io` vs `index.docker.io` naming) | Normalise references in `dt-bridge`; document limits |
-| Provider credentials without a write-only variant (registry `access_secret`) land in OpenTofu state | State encrypted with the OpenBao Transit key provider, state file git-ignored; covered by criterion 24 |
+| Provider credentials without a write-only variant (registry `access_secret`) land in OpenTofu state | State encrypted with the OpenBao Transit key provider, state file git-ignored (the webhook Bearer token, also without a write-only variant, sits in it too); covered by criterion 24 |
 | Dependency-Track ignores the PURL `upstream=` qualifier, so Debian advisories (source packages) never match SBOM binary packages | Criterion 17 proves conversion and acceptance; finding-level proof and Debian coverage in DT wait for DependencyTrack/dependency-track#6132 (`docs/ROADMAP.md`) |
 | Grype (in-cluster) and Trivy (CI/Harbor) CVE results diverge | Documented in an ADR; DT is the triage source of truth |
 | Keyless signing uses the public Rekor log, unlike a bank KMS/HSM setup | Documented in the threat model with the KMS alternative |
-| Memory pressure on a 23 GiB WSL host | Budget checked in M8 (criterion 22): 12 GiB, since `kubectl top nodes` counts active page cache (containerd, Grype DB) and the full platform measures ~10.0–10.4 GiB |
+| Memory pressure on a 23 GiB WSL host | Budget checked in M8 (criterion 22): 12 GiB, since `kubectl top nodes` counts active page cache (containerd, Grype DB) and the full platform measures ~10.0–10.4 GiB fresh, peak 10708 Mi |

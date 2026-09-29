@@ -15,9 +15,11 @@
 #                        `supported` digests of images/catalog.yaml, leaving their fixture-only
 #                        deprecated/eol entries (absent from the catalog) untouched
 #
-# sha defaults to the current HEAD. workloads/fixtures wait up to RELEASE_REPIN_TIMEOUT seconds
-# (default 900) for the sibling build to publish, polling every RELEASE_REPIN_INTERVAL seconds
-# (default 20): the build that publishes it runs concurrently, triggered by the same push.
+# sha defaults to the current HEAD. workloads/fixtures wait up to RELEASE_REPIN_TIMEOUT seconds in total
+# (default 900, one deadline shared by every image of the command), polling every RELEASE_REPIN_INTERVAL
+# seconds (default 20): the build that publishes them runs concurrently, triggered by the same push.
+# Each pull request branches from the checked-out commit and the checkout returns to it afterwards, so
+# the steps of one run never stack on each other's commits.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,6 +28,7 @@ CATALOG="$REPO_ROOT/images/catalog.yaml"
 DEMO_FIXTURES="$REPO_ROOT/images/demo-fixtures.yaml"
 TIMEOUT="${RELEASE_REPIN_TIMEOUT:-900}"
 INTERVAL="${RELEASE_REPIN_INTERVAL:-20}"
+START_SECONDS=$SECONDS
 # app -> Dockerfile path, and the golden image it is built on
 declare -A APP_DOCKERFILE=(
   [hello-java]=apps/hello-java/Dockerfile
@@ -58,11 +61,11 @@ die() {
   exit 1
 }
 
-# Prints the digest of ref $1, waiting up to $TIMEOUT seconds for it to be published; prints nothing (not
-# an error) once that budget is spent, since the sibling build may simply not have been triggered by this
+# Prints the digest of ref $1, waiting for it to be published until $TIMEOUT seconds have elapsed since the
+# script started (one deadline for all refs); prints nothing (not an error) once it is spent, since the sibling build may simply not have been triggered by this
 # push. Dies on any lookup error other than "not found yet".
 wait_for_digest() {
-  local ref="$1" out waited=0
+  local ref="$1" out
   while true; do
     if out="$(crane digest "$ref" 2>&1)"; then
       [[ "$out" =~ (sha256:[0-9a-f]{64}) ]] || die "unexpected crane output for $ref: $out"
@@ -71,9 +74,8 @@ wait_for_digest() {
     elif [[ "$out" != *MANIFEST_UNKNOWN* && "$out" != *NAME_UNKNOWN* && "$out" != *"404"* ]]; then
       die "cannot look up $ref: $out"
     fi
-    [ "$waited" -lt "$TIMEOUT" ] || { echo "$ref: not published within ${TIMEOUT}s, skipping" >&2; return 0; }
+    [ $((SECONDS - START_SECONDS)) -lt "$TIMEOUT" ] || { echo "$ref: not published within ${TIMEOUT}s, skipping" >&2; return 0; }
     sleep "$INTERVAL"
-    waited=$((waited + INTERVAL))
   done
 }
 
@@ -107,17 +109,19 @@ repin_supported_line() {
 # Opens a pull request from the files already staged in $REPO_ROOT, or does nothing when nothing changed.
 # $1: branch name  $2: commit/PR title  $3: PR body
 open_repin_pr() {
-  local branch="$1" title="$2" body="$3"
+  local branch="$1" title="$2" body="$3" origin_ref
   if git -C "$REPO_ROOT" diff --cached --quiet; then
     echo "$title: nothing to re-pin"
     return 0
   fi
   git -C "$REPO_ROOT" config user.name "github-actions[bot]"
   git -C "$REPO_ROOT" config user.email "github-actions[bot]@users.noreply.github.com"
+  origin_ref="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD || git -C "$REPO_ROOT" rev-parse HEAD)"
   git -C "$REPO_ROOT" checkout -b "$branch"
   git -C "$REPO_ROOT" commit -m "$title"
   git -C "$REPO_ROOT" push origin "$branch"
   (cd "$REPO_ROOT" && gh pr create --base main --head "$branch" --title "$title" --body "$body")
+  git -C "$REPO_ROOT" checkout --quiet "$origin_ref"
 }
 
 cmd_dockerfiles() {

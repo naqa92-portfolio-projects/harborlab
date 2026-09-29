@@ -61,10 +61,13 @@ tasks:
       also re-pins the E2E fixture Dockerfiles and Kyverno E2E params to the supported catalog digests;
       opens a pull request per step that changed something (release-repin.yml runs the same steps
       automatically on the pushes that can need them)
+    vars:
+      HEAD_SHA:
+        sh: git rev-parse HEAD
     cmds:
       - ./scripts/release-repin.sh dockerfiles
-      - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh workloads
-      - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh fixtures
+      - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh workloads {{.HEAD_SHA}}
+      - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh fixtures {{.HEAD_SHA}}
       - ./scripts/release-repin.sh e2e-params
 
   demo:unsigned:

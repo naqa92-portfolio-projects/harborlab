@@ -118,9 +118,10 @@ findings:
 - S29 fixed 00c52d4
 - S35 disagreed — PRD **Status** line is set by /prd-done at merge, not during the run
 demo:
-- P1 artifacts/prd-1/demo/ commit 748a53f (recorded on 3bf4896) 8/8 confirmed
-- P2 artifacts/prd-1/demo/ commit 748a53f 6/6 confirmed
-- P3 artifacts/prd-1/demo/ commit 748a53f 7/7 confirmed — step 6 on retry after Grafana OOMKilled (limit 448Mi) in Explore/VictoriaLogs → Points à arbitrer
+- P1 artifacts/prd-1/demo/ commit bda2f23 (recorded on 1c14170) 8/8 confirmed
+- P2 artifacts/prd-1/demo/ commit bda2f23 6/6 confirmed
+- P3 artifacts/prd-1/demo/ commit bda2f23 7/7 confirmed — Grafana restartCount 0 through Explore/VictoriaLogs (643/768 Mi peak)
+- superseded: first recording 748a53f (on 3bf4896) — Grafana OOMKilled in P3 step 6, fixed by S29
 - deviations accepted: web frames at 1280×800 (admin consoles unusable at phone width), Chrome --ignore-certificate-errors (no certutil; browser chrome not in frames)
 
 ## Milestones

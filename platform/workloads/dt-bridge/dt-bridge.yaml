@@ -116,7 +116,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dt-bridge
-          image: harbor.127.0.0.1.nip.io/apps/dt-bridge@sha256:6c6d770346331b257eea4551edc58486df15a9d2448bfdb4ac720b1585c84cd7
+          image: harbor.127.0.0.1.nip.io/apps/dt-bridge@sha256:097b3a310d175207b3bbf48b156774c8e2692a060637742a453206dae47e0978
           ports:
             - name: http
               containerPort: 8080

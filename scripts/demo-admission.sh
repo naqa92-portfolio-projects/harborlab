@@ -90,6 +90,14 @@ case "$SCENARIO" in
   *) die "unknown admission scenario '$SCENARIO'" ;;
 esac
 
+# A namespace outside the workload and platform tiers has no workload rule to demo: tier-required denies
+# every pod there, and that denial is the documented outcome.
+TIER="$(kubectl get namespace "$NAMESPACE" -o jsonpath='{.metadata.labels.harborlab\.io/tier}')"
+if [ "$TIER" != workload ] && [ "$TIER" != platform ]; then
+  ACTION=deny
+  TEXT='Policy tier-required failed: pods run only in a namespace labelled harborlab.io/tier=workload or harborlab.io/tier=platform'
+fi
+
 # A restricted-compliant pod (the root scenario only runs as UID 0), so that only the rule under demo reacts.
 jq -n --arg ns "$NAMESPACE" --arg pod "$POD" --arg image "$IMAGE" --argjson command "$COMMAND" \
   --argjson root "$ROOT" '{

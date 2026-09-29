@@ -21,12 +21,14 @@ or `Warning:` lines). It never creates, labels or deletes the namespace.
 ```sh
 devbox run -- task demo:unsigned                                   # default workload namespace
 kubectl create namespace scratch
-devbox run -- task demo:unsigned NAMESPACE=scratch                 # no tier label: nothing reacts, exits non-zero
+devbox run -- task demo:unsigned NAMESPACE=scratch                 # no tier label: denied by tier-required, exits 0
 ```
 
 The pod is otherwise compliant with Pod Security `restricted`, so that only the rule under demo reacts.
-Run in a namespace without the workload label, the same pod is admitted without any warning and the task
-exits non-zero: the reaction comes from the platform's tiering, not from the pod.
+Run in a namespace without a `harborlab.io/tier` label, whatever the scenario, the pod is denied by
+`tier-required` (`Policy tier-required failed: pods run only in a namespace labelled
+harborlab.io/tier=workload or harborlab.io/tier=platform`) and the task exits 0: the denial is the
+documented outcome there, and it comes from the platform's tiering, not from the pod.
 
 The images of the Harbor-based scenarios are the admission fixtures of `tests/fixtures/images`, built by
 `.github/workflows/fixtures.yml` and pulled into Harbor `apps` by the replication
@@ -96,14 +98,15 @@ The images of the Harbor-based scenarios are the admission fixtures of `tests/fi
 - The task waits until node-agent reports it has loaded that profile for the current container (its log
   line `adopted user-authored ContainerProfile as authoritative base`, from node-agent's log or, once
   rotated, VictoriaLogs), runs
-  `sh -c 'echo …'` once with `kubectl exec`, prints `runtime-shell target: <namespace>/<pod>/<container>`,
+  `sh -c 'echo …'` with `kubectl exec` (again every 10 s until an alert shows, within a 120 s budget),
+  prints `runtime-shell target: <namespace>/<pod>/<container>`,
   then waits for the Kubescape alert of that shell and prints `runtime-shell alert: <alert>`.
 - Reaction: Kubescape raises `Unexpected process launched` (rule `R0001`) for the shell. The alert is in
   VictoriaLogs within seconds; in Grafana, open *Explore*, datasource `victorialogs`, and query
   `RuleID:R0001 AND RuntimeK8sDetails.namespace:="runtime-demo"`. The `image posture` dashboard's runtime
   panel counts it for golden image `python`.
 - The task exits non-zero when node-agent has not loaded the profile within 90 s (it retries a failed
-  profile fetch every minute) or no alert comes within 20 s.
+  profile fetch every minute) or no alert comes within the 120 s budget.
 
 ## `demo:vex` — vendor VEX reaches Dependency-Track
 

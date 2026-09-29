@@ -245,11 +245,13 @@ for the other Applications and a manual resync remains the documented recovery.
 
 `.github/workflows/golden.yml` and `.github/workflows/release-repin.yml` open pull requests with the
 workflow `GITHUB_TOKEN`. GitHub does not start `pull_request` workflows for events created with that token,
-so the required status checks of the `main` ruleset never report and block the merge until a maintainer
-triggers CI on the branch (an empty commit pushed by a person, or closing and reopening the pull request).
+so these pull requests run no `pull_request` CI. The `main` ruleset requires no status check, so they are not
+blocked; the maintainer can trigger CI on the branch (an empty commit pushed by a person, or closing and
+reopening the pull request).
 
 Upstream: [GitHub documentation, triggering a workflow from a workflow](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow).
-The standard remedy is to open these pull requests with a GitHub App installation token.
+If status checks become required, the standard remedy is to open these pull requests with a GitHub App
+installation token.
 
 Exit condition: the workflows open their pull requests with a GitHub App installation token, so CI runs
-without a maintainer.
+without a maintainer (needed only if checks become required).

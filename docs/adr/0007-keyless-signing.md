@@ -22,8 +22,8 @@ the GitHub Actions OIDC identity of the workflow and records each signature in t
 
 - No private key to manage; every signing event is public and auditable in Rekor.
 - Signing and verification depend on the public Sigstore infrastructure (Fulcio, Rekor, TUF root).
-- Whoever can push to `main` or create a `prd-*` branch can produce admissible images: branch protection is
-  part of the trust chain (see the [threat model](../THREAT-MODEL.md)).
+- Whoever can push to `main` or create a `prd-*` branch can produce admissible images: repository write
+  access is part of the trust chain (see the [threat model](../THREAT-MODEL.md)).
 - A bank would sign with a KMS/HSM key or a private Sigstore; only the policies' attestor definition changes.
 
 ## Amendment (2026-09-28): main-only identity, repository binding, environment-specific revision trust
@@ -46,10 +46,14 @@ the decision it superseded here is kept as written above for its historical reas
   before its merge. Off `main`, the root chart patches the `kyverno-policies` and `dt-bridge` Applications
   to also trust `refs/heads/(main|<revision>)`, the revision regexp-quoted — never a pattern such as
   `prd-.+` — and only in that one environment. The revision is whatever is deployed (`main`, else
-  `HARBORLAB_REVISION`, else the current branch, else the `HEAD` SHA), not only a `prd-*` branch, so
-  restricting `prd-*` creation does not bound it; a detached SHA yields `refs/heads/<sha>`, which matches no
+  `HARBORLAB_REVISION`, else the current branch, else the `HEAD` SHA), not only a `prd-*` branch; a detached SHA yields `refs/heads/<sha>`, which matches no
   real ref. `scripts/render-policies.sh <revision> <out-dir>` renders the same identity for the policy CI. A platform deployed from `main` renders the committed identities
   unchanged. See the [threat model](../THREAT-MODEL.md#environment-specific-trust) for the full mechanism.
+- **Repository ruleset.** The single ruleset on `main` blocks deletion and force-pushes
+  (`non_fast_forward`); it does not restrict who can push. The identity `build-image.yml@refs/heads/main` of
+  this repository is therefore bound to whoever has write access to it (the solo owner). The ruleset
+  prevents rewriting or deleting `main`; since production trusts `main` only, no rule on `prd-*` branches is
+  needed.
 - **Build-only signing.** Signing and attestation steps in `build-image.yml` now run only on the
   digest this same job built (or, for an already-published tag, verify it was built and signed by this
   workflow before trusting it) — not on an arbitrary pre-existing GHCR tag pushed by any principal with

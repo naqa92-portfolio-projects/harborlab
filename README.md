@@ -21,13 +21,13 @@ the rest (build, attestation, registry, admission, runtime detection and triage)
 | Docker daemon running (kind runs the cluster as a Docker container) | `docker info >/dev/null 2>&1` |
 | GitHub CLI (`gh`) logged in | `gh auth status` |
 | Public repository: keyless signing identity, public GHCR images, OpenSSF Scorecard | `gh repo view --json visibility -q .visibility` |
-| A repository ruleset protecting `main` (required reviews, required status checks, no force-push/deletion) and restricting who can create `prd-*` branches, so the signing identity (`build-image.yml@refs/heads/main`, plus the one revision the platform is deployed from when it is not `main`) is only as trusted as who can push those refs: the extra trust follows whatever revision is deployed, not only a `prd-*` branch, so restricting `prd-*` creation does not bound it — a human sets this in repository settings, it is not automated | `gh api repos/{owner}/{repo}/rulesets` |
+| A repository ruleset on `main` blocking deletion and force-pushes (`non_fast_forward`), nothing else: `main` cannot be rewritten or deleted, but anyone with write access can still push to it, so the signing identity `build-image.yml@refs/heads/main` is bound to whoever has write access to the repository (the solo owner). Production trusts `main` only, so no rule on `prd-*` branches is needed. A human sets this in repository settings, it is not automated | `gh api repos/{owner}/{repo}/rulesets` |
 | A Docker account token for `dhi.io` in the git-ignored `.env` as `DHI_TOKEN`, with its account name as `DHI_USERNAME` | `grep -q '^DHI_TOKEN=.' .env && grep -q '^DHI_USERNAME=.' .env` |
 | The same `DHI_TOKEN` and `DHI_USERNAME` as GitHub Actions secrets (golden image builds) | `gh secret list` |
 | At least 16 GiB of RAM available to Docker (WSL included) | `free -g` |
 
-The ruleset protects who can push to this repository's own `main`/`prd-*` refs; it does not cover
-another repository calling `build-image.yml` as a reusable workflow — that caller is restricted
+The ruleset prevents rewriting or deleting this repository's `main`; it does not restrict who can push, and
+it does not cover another repository calling `build-image.yml` as a reusable workflow — that caller is restricted
 separately, by the `github.repository` job guard in `build-image.yml`.
 
 `.env` is git-ignored and only read by the Taskfile; `task up` seeds its values into OpenBao, from where
@@ -107,9 +107,9 @@ current `HEAD`, for a manual re-pin (for example right after merging, without wa
 fixtures builds `release-repin.yml`'s later steps wait on).
 
 Pull requests opened with the workflow `GITHUB_TOKEN` (`golden.yml`'s catalog pull request, the re-pin pull
-requests) trigger no `pull_request` workflow, so the required status checks of the `main` ruleset stay
-pending and block the merge until a maintainer triggers CI on the branch. The standard remedy, a GitHub
-App installation token, is described in [Workarounds](docs/WORKAROUNDS.md).
+requests) run no `pull_request` workflow; no status check is required, so they merge without one, and the
+maintainer can trigger CI on the branch. If checks become required, the standard remedy, a GitHub App
+installation token, is described in [Workarounds](docs/WORKAROUNDS.md).
 
 ## Memory budget
 

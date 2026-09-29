@@ -66,8 +66,11 @@ Trade-offs for a regulated environment such as a bank:
   and from admission.
 - The transparency log publishes the signing identity, the repository and the image digest: acceptable
   for this public repository, not for confidential build metadata.
-- Trust is anchored in the GitHub OIDC issuer and the repository's branch protections: whoever can push
-  to a trusted branch can produce admissible images.
+- Trust is anchored in the GitHub OIDC issuer and in write access to the repository: the identity
+  `build-image.yml@refs/heads/main` of this repository is bound to whoever can push to `main` (the solo
+  owner). The ruleset on `main` blocks deletion and force-pushes (`non_fast_forward`) so `main` cannot be
+  rewritten or deleted, but it does not restrict who can push. Production trusts `main` only, so no rule on
+  `prd-*` branches is needed.
 
 ## Environment-specific trust
 
@@ -76,8 +79,7 @@ The policies and the `dt-bridge` signer identities committed in git trust `build
 another revision (`task up` on a checked-out branch, or `HARBORLAB_REVISION=<revision>`) must also admit the
 images that revision built before its merge, so it trusts exactly that one additional ref, and only in that
 environment. The extra trust follows whatever revision is deployed, not only a `prd-*` branch (`main`, else
-`HARBORLAB_REVISION`, else the current branch, else the `HEAD` SHA): restricting the creation of `prd-*`
-branches therefore does not bound it. A detached `HEAD` yields the identity `refs/heads/<sha>`, which matches
+`HARBORLAB_REVISION`, else the current branch, else the `HEAD` SHA). A detached `HEAD` yields the identity `refs/heads/<sha>`, which matches
 no real ref and adds no trust in practice.
 
 - `task up` passes the revision to the root Application (`revision` value of `platform/apps`); off
@@ -112,7 +114,7 @@ Accepted or pending risks found while building the platform, with the control th
 | Finding | Risk | Mitigation |
 |---|---|---|
 | Keyless signing on the public Rekor instead of a KMS | Signing and admission depend on public Sigstore services; signing metadata is public | Documented above; a bank signs with a KMS/HSM key (`cosign --key <kms-uri>`) or a private Sigstore, and only the policies' attestor changes |
-| Branch protection is a human setting | With the identity above, the chain of trust is only as strong as who can push to `main` or create `prd-*` branches; no ruleset is declared in this repository | A repository administrator adds a ruleset protecting `main` (reviews, status checks) and restricting the creation of `prd-*` branches |
+| Repository write access anchors the signing identity | The ruleset on `main` (a human setting, not declared in this repository) blocks deletion and force-pushes only; whoever has write access can push to `main` and sign admissible images, and that is the solo owner | A bank adds required reviews and required status checks on `main` and restricts who can push; `prd-*` needs no rule since production trusts `main` only |
 | OpenTofu does not see every out-of-band Harbor change | A replication filter edited in the Harbor UI stays unnoticed by `task harbor:plan` | Treat the Harbor UI as read-only; `tofu apply -replace` restores the declared rule |
 | `dt-bridge` reads attestations from Harbor referrers | A tampered referrer would mislead triage (not admission, which verifies signatures itself) | Fixed: `dt-bridge` verifies the Sigstore bundles against the build identity and the caller repository before using an attestation |
 | The local CA once lacked a `keyUsage` extension | Strict X.509 clients rejected it, and `dt-bridge` relaxed Python's strict verification for Harbor | Fixed: `task up` emits a CA certificate with a critical `keyUsage` (`keyCertSign`, `cRLSign`), so strict verification stays on |

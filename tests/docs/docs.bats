@@ -230,3 +230,17 @@ adr_title() {
 
   [ "${#problems[@]}" -eq 0 ] || fail "$(printf '%s; ' "${problems[@]}")"
 }
+
+@test "DEMO.md shows the tier-required denial of a namespace without a tier label" {
+  [ -s "$REPO_ROOT/$DEMO" ] || fail "$DEMO does not exist or is empty"
+  problems=()
+  stale="$(grep -niE 'admitted without any warning|no tier label: nothing reacts' "$REPO_ROOT/$DEMO" || true)"
+  [ -z "$stale" ] ||
+    problems+=("$DEMO says a pod in a namespace without harborlab.io/tier draws no reaction, but tier-required denies it: $(paste -sd ' ' - <<<"$stale")")
+  # Blank-line separated paragraphs (code blocks included) naming tier-required.
+  paragraphs="$(awk -v RS= '/tier-required/ { gsub(/\n/, " "); print }' "$REPO_ROOT/$DEMO")"
+  [ -n "$paragraphs" ] || problems+=("$DEMO never names the tier-required policy")
+  [ -z "$paragraphs" ] || grep -iE 'den(y|ies|ied)' <<<"$paragraphs" | grep -qiE 'exits? (with )?(status |code )?0' ||
+    problems+=("no paragraph of $DEMO says a demo in a namespace without harborlab.io/tier is denied by tier-required and exits 0")
+  [ "${#problems[@]}" -eq 0 ] || fail "$(printf '%s; ' "${problems[@]}")"
+}

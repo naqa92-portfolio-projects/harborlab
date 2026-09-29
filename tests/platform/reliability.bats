@@ -4,6 +4,7 @@
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 load dt
+load grafana
 
 RUNTIME_DEMO=runtime-demo/runtime-demo
 RUNTIME_SHELL_RUNS=3
@@ -17,6 +18,15 @@ CATALOG=images/catalog.yaml
 WORKLOAD_MANIFESTS=platform/workloads
 HARBOR_IMAGE_RE='harbor\.127\.0\.0\.1\.nip\.io/(golden|apps)/([a-z0-9._/-]+)@(sha256:[0-9a-f]{64})'
 FIXTURES_REPLICATION=apps-demo-fixtures-from-ghcr
+GRAFANA_POD_SELECTOR=app.kubernetes.io/name=grafana
+GRAFANA_CONTAINER=grafana
+GRAFANA_MIN_LIMIT_MI=768
+VL_PLUGIN_ID=victoriametrics-logs-datasource
+# Explore's defaults when the VictoriaLogs datasource is picked: the last hour, raw logs, 1000 lines.
+EXPLORE_RANGE_MS=3600000
+EXPLORE_MAX_LINES=1000
+# Time left to the kernel and the kubelet to report an OOM kill of the queried container.
+GRAFANA_SETTLE_SECONDS=20
 
 fail() {
   echo "$*" >&2
@@ -134,4 +144,47 @@ pinned_digests() {
     Succeed | Success) ;;
     *) fail "the latest execution $id of $FIXTURES_REPLICATION ($trigger, $started) ended $status" ;;
   esac
+}
+
+@test "Grafana opens the VictoriaLogs datasource in Explore with at least 768Mi and is never OOMKilled" {
+  run kubectl -n "$OBSERVABILITY_NAMESPACE" get pods -l "$GRAFANA_POD_SELECTOR" -o json
+  [ "$status" -eq 0 ] || fail "cannot list the Grafana pods: $output"
+  [ "$(jq '[.items[] | select(.status.phase == "Running")] | length' <<<"$output")" -eq 1 ] ||
+    fail "expected one running Grafana pod: $(jq -c '[.items[] | {name: .metadata.name, phase: .status.phase}]' <<<"$output")"
+  before="$(jq -c '.items[] | select(.status.phase == "Running")' <<<"$output")"
+  pod="$(jq -r '.metadata.name' <<<"$before")"
+  uid="$(jq -r '.metadata.uid' <<<"$before")"
+  restarts="$(jq -r --arg c "$GRAFANA_CONTAINER" '.status.containerStatuses[] | select(.name == $c) | .restartCount' <<<"$before")"
+  problems=()
+  limit="$(jq -r --arg c "$GRAFANA_CONTAINER" '.spec.containers[] | select(.name == $c) | .resources.limits.memory // ""' <<<"$before")"
+  [ -n "$limit" ] && [ "$(memory_mi "$limit")" -ge "$GRAFANA_MIN_LIMIT_MI" ] ||
+    problems+=("pod $pod runs Grafana with memory limit '${limit}', below ${GRAFANA_MIN_LIMIT_MI}Mi")
+
+  # The requests Explore makes when the VictoriaLogs datasource is picked: plugin assets, health, field
+  # lists through the datasource proxy, then the default raw logs query.
+  to=$(($(date +%s) * 1000))
+  from=$((to - EXPLORE_RANGE_MS))
+  for path in "/public/plugins/$VL_PLUGIN_ID/module.js" "/public/plugins/$VL_PLUGIN_ID/plugin.json" \
+    "/api/plugins/$VL_PLUGIN_ID/settings" "/api/datasources/uid/$VL_DATASOURCE_UID" \
+    "/api/datasources/uid/$VL_DATASOURCE_UID/health" \
+    "/api/datasources/proxy/uid/$VL_DATASOURCE_UID/select/logsql/field_names?query=*&start=$((from / 1000))&end=$((to / 1000))" \
+    "/api/datasources/proxy/uid/$VL_DATASOURCE_UID/select/logsql/stream_field_names?query=*&start=$((from / 1000))&end=$((to / 1000))"; do
+    grafana_api GET "$path" || return 1
+    [ "$HTTP_CODE" = 200 ] || problems+=("Grafana GET ${path%%\?*} answered HTTP $HTTP_CODE: $(head -c 200 "$HTTP_BODY" 2>/dev/null)")
+  done
+  jq -n --argjson n "$EXPLORE_MAX_LINES" '{expr: "*", queryType: "instant", maxLines: $n}' >"$BATS_TEST_TMPDIR/explore-query.json"
+  grafana_ds_query "$VL_DATASOURCE_UID" "$BATS_TEST_TMPDIR/explore-query.json" "$from" "$to" ||
+    problems+=("the Explore default query on $VL_DATASOURCE_UID failed")
+  sleep "$GRAFANA_SETTLE_SECONDS"
+
+  run kubectl -n "$OBSERVABILITY_NAMESPACE" get pod "$pod" -o json
+  [ "$status" -eq 0 ] || fail "Grafana pod $pod disappeared while Explore opened VictoriaLogs: $output ${problems[*]}"
+  after="$output"
+  [ "$(jq -r '.metadata.uid' <<<"$after")" = "$uid" ] || problems+=("Grafana pod $pod was replaced")
+  now="$(jq -r --arg c "$GRAFANA_CONTAINER" '.status.containerStatuses[] | select(.name == $c) | .restartCount' <<<"$after")"
+  [ "$now" = "$restarts" ] || problems+=("Grafana container restarted while Explore opened VictoriaLogs (restartCount $restarts -> $now)")
+  killed="$(jq -r '.status.containerStatuses[] | select(.lastState.terminated.reason == "OOMKilled" or .state.terminated.reason == "OOMKilled")
+    | "\(.name) (restarts \(.restartCount), last \((.lastState.terminated // .state.terminated).finishedAt))"' <<<"$after")"
+  [ -z "$killed" ] || problems+=("Grafana was OOMKilled: $killed")
+  [ "${#problems[@]}" -eq 0 ] || fail "$(printf '%s\n' "${problems[@]}")"
 }

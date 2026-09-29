@@ -12,6 +12,8 @@ DT_BRIDGE_SRC=apps/dt-bridge/src
 RUNTIME_DEMO_PROFILE=platform/workloads/runtime-demo/containerprofile.yaml
 RESOURCES_FINALIZER=resources-finalizer.argocd.argoproj.io
 VICTORIA_LOGS_MIN_LIMIT_MI=512
+# Grafana 13 with the VictoriaLogs plugin backend is OOMKilled at 448Mi when Explore opens that datasource.
+GRAFANA_MIN_LIMIT_MI=768
 
 fail() {
   echo "$*" >&2
@@ -125,6 +127,17 @@ EOF
   [ -n "$limit" ] || fail "Application victoria-logs sets no server memory limit"
   [ "$(memory_mi "$limit")" -ge "$VICTORIA_LOGS_MIN_LIMIT_MI" ] ||
     fail "VictoriaLogs server memory limit $limit is below ${VICTORIA_LOGS_MIN_LIMIT_MI}Mi"
+}
+
+@test "Grafana memory limit is at least 768Mi" {
+  run rendered_applications
+  [ "$status" -eq 0 ] || fail "helm template $APPS_CHART failed: $output"
+  limit="$(jq -r '.[] | select(.metadata.name == "grafana")
+    | [(.spec.sources // [.spec.source])[] | select(.chart == "grafana")][0]
+    | .helm.valuesObject.resources.limits.memory // ""' <<<"$output")"
+  [ -n "$limit" ] || fail "Application grafana sets no memory limit"
+  [ "$(memory_mi "$limit")" -ge "$GRAFANA_MIN_LIMIT_MI" ] ||
+    fail "Grafana memory limit $limit is below ${GRAFANA_MIN_LIMIT_MI}Mi"
 }
 
 @test "local CA is generated with CA basic constraints and certificate signing key usage" {

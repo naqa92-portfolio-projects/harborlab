@@ -19,6 +19,10 @@ POLL_SECONDS=5
 # Platform tier: no workload policy applies there, and tier-required still admits its pods.
 CONTROL_NAMESPACE=harborlab-demo-control
 CONTROL_TIER_LABEL=harborlab.io/tier=platform
+# No tier label: tier-required denies every pod there, whatever the scenario.
+UNTIERED_NAMESPACE=harborlab-demo-untiered
+TIER_LABEL_KEY=harborlab.io/tier
+TIER_REQUIRED_TEXT='pods run only in a namespace labelled harborlab.io/tier=workload or harborlab.io/tier=platform'
 GOLDEN_IMAGES_CONFIGMAP=golden-images
 KYVERNO_NAMESPACE=kyverno
 BUILD_IDENTITY='^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/(main|prd-.+)$'
@@ -44,6 +48,7 @@ setup() {
 
 teardown() {
   kubectl delete namespace "$CONTROL_NAMESPACE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  kubectl delete namespace "$UNTIERED_NAMESPACE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
 }
 
 problem() {
@@ -335,6 +340,34 @@ check_vex() {
 
   [ "$(kubectl get namespace "$CONTROL_NAMESPACE" -o json | jq -cS '.metadata.labels // {}')" = "$labels" ] ||
     problem "the demo tasks changed the labels of namespace $CONTROL_NAMESPACE"
+
+  [ "${#PROBLEMS[@]}" -eq 0 ] || fail "$(printf '%s\n' "${PROBLEMS[@]}")"
+}
+
+@test "demo scenario in a namespace without a tier label shows the tier-required denial and exits 0" {
+  kubectl delete namespace "$UNTIERED_NAMESPACE" --ignore-not-found --wait=true >/dev/null
+  kubectl create namespace "$UNTIERED_NAMESPACE" >/dev/null
+  labels="$(kubectl get namespace "$UNTIERED_NAMESPACE" -o json | jq -cS '.metadata.labels // {}')"
+  jq -e --arg k "$TIER_LABEL_KEY" 'has($k) | not' <<<"$labels" >/dev/null ||
+    fail "control: namespace $UNTIERED_NAMESPACE was created with a $TIER_LABEL_KEY label: $labels"
+
+  for scenario in "${ADMISSION_SCENARIOS[@]}"; do
+    run_task "$ADMISSION_TIMEOUT_SECONDS" "demo:$scenario" "NAMESPACE=$UNTIERED_NAMESPACE"
+    target_re="^demo:$scenario target: $UNTIERED_NAMESPACE/[a-z0-9.-]+ image: [^[:space:]]+$"
+    if ! grep -qE "$target_re" <<<"$output"; then
+      problem "demo:$scenario NAMESPACE=$UNTIERED_NAMESPACE exited $status without reaching its admission step: $(tail -n 3 <<<"$output" | paste -sd ' ' -)"
+      continue
+    fi
+    grep -F 'tier-required' <<<"$output" | grep -qF "$TIER_REQUIRED_TEXT" ||
+      problem "demo:$scenario NAMESPACE=$UNTIERED_NAMESPACE does not show the tier-required denial: $(tail -n 3 <<<"$output" | paste -sd ' ' -)"
+    [ "$status" -eq 0 ] ||
+      problem "demo:$scenario NAMESPACE=$UNTIERED_NAMESPACE exited $status although tier-required denied the pod: $(tail -n 1 <<<"$output")"
+    ! kubectl -n "$UNTIERED_NAMESPACE" get pod "demo-$scenario" -o name >/dev/null 2>&1 ||
+      problem "demo:$scenario left pod demo-$scenario running in namespace $UNTIERED_NAMESPACE without a tier label"
+  done
+
+  [ "$(kubectl get namespace "$UNTIERED_NAMESPACE" -o json | jq -cS '.metadata.labels // {}')" = "$labels" ] ||
+    problem "the demo tasks changed the labels of namespace $UNTIERED_NAMESPACE"
 
   [ "${#PROBLEMS[@]}" -eq 0 ] || fail "$(printf '%s\n' "${PROBLEMS[@]}")"
 }

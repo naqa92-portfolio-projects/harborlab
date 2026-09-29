@@ -17,6 +17,12 @@ NEW_DT_BRIDGE=sha256:44444444444444444444444444444444444444444444444444444444444
 NEW_RUNTIME_DEMO=sha256:5555555555555555555555555555555555555555555555555555555555555555
 NEW_FIXTURE=sha256:6666666666666666666666666666666666666666666666666666666666666666
 MAIN_SHA=0123456789abcdef0123456789abcdef01234567
+E2E_FILES=(tests/fixtures/images/compliant/Dockerfile tests/fixtures/images/missing-labels/Dockerfile
+  tests/chainsaw/params/golden-images.yaml tests/kyverno/workload/context.yaml)
+# A waiting job's timeout covers the script's wait plus checkout, devbox install and registry login.
+JOB_SETUP_SECONDS=300
+# GitHub Actions' timeout-minutes when a job sets none.
+DEFAULT_JOB_TIMEOUT_MINUTES=360
 
 fail() {
   echo "$*" >&2
@@ -233,4 +239,103 @@ assert_noop() {
   branches="$(origin_branches)"
   run_repin 4243 fixtures "$MAIN_SHA"
   assert_noop "$main_after" "$branches"
+}
+
+@test "release-repin.yml wait jobs outlast the script's worst-case wait for images never published" {
+  make_scratch_repo
+  budget=3
+  default_timeout="$(grep -oE 'RELEASE_REPIN_TIMEOUT:-[0-9]+' "$REPO_ROOT/$SCRIPT" | head -n1 | grep -oE '[0-9]+$')"
+  [ -n "$default_timeout" ] || fail "$SCRIPT has no RELEASE_REPIN_TIMEOUT default"
+  problems=()
+  for job in workloads fixtures; do
+    # Nothing published: the script spends its whole wait. Sequential per-image waits take refs x budget.
+    started=$SECONDS
+    run env PATH="$FAKE_PATH:$PATH" FAKE_REGISTRY="$FAKE_REGISTRY" FAKE_GH_LOG="$FAKE_GH_LOG" GITHUB_RUN_ID=4242 \
+      RELEASE_REPIN_TIMEOUT="$budget" RELEASE_REPIN_INTERVAL=1 "$WORK/$SCRIPT" "$job" "$MAIN_SHA"
+    elapsed=$((SECONDS - started))
+    [ "$status" -eq 0 ] || fail "$job failed on unpublished images (exit $status): $output"
+    refs="$(grep -c 'not published within' <<<"$output" || true)"
+    [ "$refs" -ge 1 ] || fail "$job reported no unpublished image: $output"
+    if [ "$elapsed" -ge $((2 * budget)) ]; then
+      worst=$((refs * default_timeout))
+    else
+      worst="$default_timeout"
+    fi
+
+    timeout_env="$(JOB="$job" yq -r '[.jobs[strenv(JOB)].steps[] | select((.run // "") | test("release-repin.sh " + strenv(JOB))) | .env.RELEASE_REPIN_TIMEOUT][0]
+      // .jobs[strenv(JOB)].env.RELEASE_REPIN_TIMEOUT // .env.RELEASE_REPIN_TIMEOUT // ""' "$REPO_ROOT/$WORKFLOW")"
+    [ -z "$timeout_env" ] || worst=$((worst * timeout_env / default_timeout))
+    minutes="$(JOB="$job" yq -r ".jobs[strenv(JOB)][\"timeout-minutes\"] // $DEFAULT_JOB_TIMEOUT_MINUTES" "$REPO_ROOT/$WORKFLOW")"
+    [ $((minutes * 60)) -ge $((worst + JOB_SETUP_SECONDS)) ] ||
+      problems+=("job $job has timeout-minutes: $minutes ($((minutes * 60))s) but the script waits up to ${worst}s for $refs image(s) (${elapsed}s for $refs x ${budget}s here) plus ${JOB_SETUP_SECONDS}s of setup: the job is killed before it opens its pull request")
+  done
+  [ "${#problems[@]}" -eq 0 ] || fail "$(printf '%s\n' "${problems[@]}")"
+}
+
+@test "task release:repin re-pins every step to the original HEAD after the dockerfiles step commits" {
+  make_scratch_repo
+  for path in Taskfile.yml "${E2E_FILES[@]}"; do
+    mkdir -p "$WORK/$(dirname "$path")"
+    cp "$REPO_ROOT/$path" "$WORK/$path"
+  done
+  yq -i "(.images[] | select(.name == \"python\" and .status == \"supported\") | .digest) = \"$NEW_PYTHON\"" \
+    "$WORK/images/catalog.yaml"
+  yq -i "(.images[] | select(.name == \"java\" and .status == \"supported\") | .digest) = \"$NEW_JAVA\"" \
+    "$WORK/images/catalog.yaml"
+  git_quiet -C "$WORK" add -A
+  git_quiet -C "$WORK" commit -m "catalog moved on main" || fail "cannot commit the catalog move"
+  git_quiet -C "$WORK" push origin main || fail "cannot push the catalog move"
+  head="$(git -C "$WORK" rev-parse HEAD)"
+  main_before="$(origin_main)"
+  # main at $head built every app and the fixtures: the images a correct run re-pins to.
+  printf '%s %s\n' \
+    "$GHCR/apps/hello-java:sha-$head" "$NEW_HELLO_JAVA" \
+    "$GHCR/apps/dt-bridge:sha-$head" "$NEW_DT_BRIDGE" \
+    "$GHCR/apps/runtime-demo:sha-$head" "$NEW_RUNTIME_DEMO" \
+    "$GHCR/fixtures/compliant:sha-$head" "$NEW_FIXTURE" >"$FAKE_REGISTRY"
+
+  run bash -c 'cd "$1" && exec env PATH="$2:$PATH" FAKE_REGISTRY="$3" FAKE_GH_LOG="$4" GITHUB_RUN_ID=4242 \
+    RELEASE_REPIN_INTERVAL=1 task release:repin 2>&1' _ "$WORK" "$FAKE_PATH" "$FAKE_REGISTRY" "$FAKE_GH_LOG"
+  [ "$(origin_main)" = "$main_before" ] || fail "task release:repin moved origin main"
+  git -C "$ORIGIN" rev-parse --verify --quiet refs/heads/release-repin-dockerfiles-4242 >/dev/null ||
+    fail "control: the dockerfiles step opened no pull request (exit $status): $output"
+  repin_commit="$(git -C "$ORIGIN" rev-parse refs/heads/release-repin-dockerfiles-4242)"
+
+  if [ "$status" -ne 0 ]; then
+    # Failing loudly is acceptable: an ERROR naming the commit the later step would have used.
+    errors="$(grep -E '^ERROR: ' <<<"$output" || true)"
+    grep -qE "${head:0:7}|${repin_commit:0:7}" <<<"$errors" ||
+      fail "task release:repin exited $status without an ERROR naming the original HEAD ${head:0:12} or the re-pin commit ${repin_commit:0:12}: $output"
+    for step in workloads fixtures; do
+      ! git -C "$ORIGIN" rev-parse --verify --quiet "refs/heads/release-repin-$step-4242" >/dev/null ||
+        fail "task release:repin failed but still pushed release-repin-$step-4242"
+    done
+    return 0
+  fi
+
+  problems=()
+  skipped="$(grep -E 'not published within|already pin' <<<"$output" || true)"
+  [ -z "$skipped" ] || problems+=("a later step skipped after the dockerfiles commit ${repin_commit:0:12} moved HEAD off ${head:0:12}: $(paste -sd ' ' - <<<"$skipped")")
+  for case in "workloads|${WORKLOADS[*]}" "fixtures|$DEMO_FIXTURES" "e2e-params|${E2E_FILES[*]}"; do
+    IFS='|' read -r step files <<<"$case"
+    branch="release-repin-$step-4242"
+    if ! git -C "$ORIGIN" rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+      problems+=("the $step step opened no pull request ($branch not pushed)")
+      continue
+    fi
+    changed="$(git -C "$ORIGIN" diff --name-only main "$branch" | sort | paste -sd ' ' -)"
+    expected="$(tr ' ' '\n' <<<"$files" | sort | paste -sd ' ' -)"
+    [ "$changed" = "$expected" ] || problems+=("$branch changes '$changed' against main, expected only '$expected'")
+  done
+  for case in "hello-java|$NEW_HELLO_JAVA" "dt-bridge|$NEW_DT_BRIDGE" "runtime-demo|$NEW_RUNTIME_DEMO"; do
+    IFS='|' read -r app digest <<<"$case"
+    file="platform/workloads/$app/$app.yaml"
+    images="$(git -C "$ORIGIN" show "release-repin-workloads-4242:$file" 2>/dev/null |
+      grep -oE "harbor\.127\.0\.0\.1\.nip\.io/apps/$app@sha256:[0-9a-f]{64}" | sort -u)"
+    [ "$images" = "harbor.127.0.0.1.nip.io/apps/$app@$digest" ] ||
+      problems+=("$file is not re-pinned to the image built at ${head:0:12} (apps/$app@$digest): '$(paste -sd ' ' - <<<"$images")'")
+  done
+  pinned="$(git -C "$ORIGIN" show "release-repin-fixtures-4242:$DEMO_FIXTURES" 2>/dev/null | yq '.commit')"
+  [ "$pinned" = "$head" ] || problems+=("$DEMO_FIXTURES pins '$pinned', expected the original HEAD $head")
+  [ "${#problems[@]}" -eq 0 ] || fail "$(printf '%s\n' "${problems[@]}")"
 }

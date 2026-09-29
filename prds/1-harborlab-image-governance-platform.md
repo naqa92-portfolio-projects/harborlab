@@ -48,7 +48,7 @@ milestone: 10/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
 catalog: tests/CATALOG.md
-gate: merge pending — waiting for the human (/prd-done 1); GitHub rulesets (T3) still to create
+gate: merge pending — waiting for the human (/prd-done 1, squash merge with an explicit message without Claude-Session trailer)
 red_ahead: none
 decision: M0 test 3 (and CAT-004) assert artifact by linux/amd64 platform digest, not tag; wait ≤240s (Harbor ManifestCache 10×20s); test image shares no layer with the node — human, 2026-09-26 (test amended aa48447, 3/3 pass on coder commits ca0d758..9927239)
 notes: M1 coder e988fc6..2566a8c (spike cluster stopped); M1 — "DHI token value is not committed" and "git history holds no secret" are invariants, LOAD_BEARING=false accepted for them and reported at the gate; DHI_TOKEN reaches tasks via Taskfile dotenv of git-ignored .env, CI via the GH secret
@@ -80,7 +80,7 @@ pr: https://github.com/naqa92-portfolio-projects/harborlab/pull/2 (CI passed on 
 findings:
 - T1 fixed 369e0b4 — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
 - T2 fixed 5260442 — workload signature identity accepts build-image.yml@refs/heads/(main|prd-.+): any prd-* branch can sign admissible images; production should trust main only (review at phase 3)
-- T3 fixed 369e0b4 (README prerequisite) + HUMAN ACTION pending: create the GitHub rulesets (main protected; prd-* creation restricted) — repository_rules.bats red until then — public-repo audit 2026-09-27: no ruleset / branch protection on main and prd-*; with T2 the signing identity is only as strong as who can push those refs (human action: ruleset protecting main + restricting prd-* creation)
+- T3 fixed 369e0b4 5b7859a + ruleset protect-main (id 24174523: deletion + non_fast_forward on main, created via gh api on human decision 2026-09-29; tests amended 15e4274, green 3/3) — was: no ruleset / branch protection on main
 - R10 fixed c0dc33a — post-merge re-pin: after merge only main-signed images are trusted, but catalog supported digests, app FROM pins, workload manifest digests and images/demo-fixtures.yaml all point to prd-1-signed builds; T12 PR covers only the catalog — extend automation (or a documented, tested release step) so main builds re-pin catalog, app Dockerfiles, platform/workloads digests and the fixtures commit
 - R11 fixed fa48761 — release-repin covers apps/*/Dockerfile only: tests/fixtures/images/{compliant,missing-labels} FROM the supported golden python digest, tests/chainsaw/params/golden-images.yaml and tests/kyverno/*/context.yaml drift after each catalog PR
 - R12 fixed d276e11 11c86c2 (ci run 36496887628) — no workflow runs tests/ci/*.bats and tests/docs/*.bats: drift checks such as policy_ci 'E2E params extend the production params' only run locally

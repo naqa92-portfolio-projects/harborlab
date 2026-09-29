@@ -1,0 +1,28 @@
+# Git source of the platform manifests; `task up` sets `revision` to the checked-out branch.
+repoURL: https://github.com/naqa92-portfolio-projects/harborlab.git
+revision: main
+
+# `root` syncs its Applications by sync wave, each wave once the previous one is Healthy:
+# 0 operators and OpenBao, 1 trust-manager and platform-config (local CA), 2 Kyverno and Harbor,
+# 3 Kyverno policies, 4 workloads, so no workload object exists before admission does.
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
+  retry:
+    limit: 30
+    backoff:
+      duration: 10s
+      factor: 2
+      maxDuration: 1m
+
+# Webhook CA bundles are injected at runtime by the operators themselves.
+webhookCaBundleDifferences:
+  - group: admissionregistration.k8s.io
+    kind: ValidatingWebhookConfiguration
+    jqPathExpressions:
+      - .webhooks[]?.clientConfig.caBundle
+  - group: admissionregistration.k8s.io
+    kind: MutatingWebhookConfiguration
+    jqPathExpressions:
+      - .webhooks[]?.clientConfig.caBundle

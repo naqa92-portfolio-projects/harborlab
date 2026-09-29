@@ -1,0 +1,30 @@
+# One policy per suite: the kyverno CLI deadlocks when two ImageValidatingPolicies evaluate one resource.
+# An EOL base and a base digest absent from the catalog fail the golden-base policy; a deprecated one passes it.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-golden-base
+policies:
+  - ../../../../policies/workload/golden-base.yaml
+resources:
+  - ../resources/pods.yaml
+variables: ../values.yaml
+context: ../context.yaml
+results:
+  - policy: workload-golden-base
+    isImageValidatingPolicy: true
+    kind: Pod
+    resources:
+      - workload-test/eol-base
+      - workload-test/unknown-base
+    result: fail
+  - policy: workload-golden-base
+    isImageValidatingPolicy: true
+    kind: Pod
+    resources:
+      - workload-test/compliant
+      - workload-test/non-harbor-registry
+      - workload-test/no-sbom
+      - workload-test/missing-labels
+      - workload-test/deprecated-base
+    result: pass

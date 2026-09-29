@@ -1,0 +1,164 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:0b6f2c1e-6f1d-4c7a-9a52-3d7f1c0e5a11",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-26T14:32:42Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "author": "anchore",
+          "name": "syft",
+          "version": "1.51.0"
+        }
+      ]
+    },
+    "component": {
+      "bom-ref": "7e6d3487026e64b0",
+      "type": "container",
+      "name": "ghcr.io/naqa92-portfolio-projects/harborlab/golden/python",
+      "version": "sha256:44440011a75ee28d9bbf977929288e1d9f907a2bc17ab2a1c67cd0e1fc7ad696"
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "pkg:pypi/autocommand@2.2.2?package-id=dc5abf01246386bb",
+      "type": "library",
+      "name": "autocommand",
+      "version": "2.2.2",
+      "purl": "pkg:pypi/autocommand@2.2.2",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "python"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/setuptools@84.0.0?package-id=5e0c9d8a7b6f4e3d",
+      "type": "library",
+      "name": "setuptools",
+      "version": "84.0.0",
+      "purl": "pkg:pypi/setuptools@84.0.0",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "python"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/msgpack@1.1.2?package-id=2a4b6c8d0e1f3a5b",
+      "type": "library",
+      "name": "msgpack",
+      "version": "1.1.2",
+      "purl": "pkg:pypi/msgpack@1.1.2",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "python"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:deb/debian/base-files@13.8%2Bdeb13u7%2Bdhi0?arch=amd64&distro=debian-13.7&package-id=58dc0e5bd33a270e",
+      "type": "library",
+      "name": "base-files",
+      "version": "13.8+deb13u7+dhi0",
+      "purl": "pkg:deb/debian/base-files@13.8%2Bdeb13u7%2Bdhi0?arch=amd64&distro=debian-13.7",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "deb"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:deb/debian/openssl@3.5.7-1~deb13u2%2Bdhi1?arch=amd64&distro=debian-13.7&package-id=4f1e9a0c7b2d3e5f",
+      "type": "library",
+      "name": "openssl",
+      "version": "3.5.7-1~deb13u2+dhi1",
+      "purl": "pkg:deb/debian/openssl@3.5.7-1~deb13u2%2Bdhi1?arch=amd64&distro=debian-13.7",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "deb"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:deb/debian/libssl3t64@3.5.7-1~deb13u2%2Bdhi1?arch=amd64&distro=debian-13.7&upstream=openssl&package-id=6a7b8c9d0e1f2a3b",
+      "type": "library",
+      "name": "libssl3t64",
+      "version": "3.5.7-1~deb13u2+dhi1",
+      "purl": "pkg:deb/debian/libssl3t64@3.5.7-1~deb13u2%2Bdhi1?arch=amd64&distro=debian-13.7&upstream=openssl",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "deb"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:deb/debian/libncursesw6@6.5%2B20250216-2%2Bdhi4?arch=amd64&distro=debian-13.7&upstream=ncurses&package-id=7b8c9d0e1f2a3b4c",
+      "type": "library",
+      "name": "libncursesw6",
+      "version": "6.5+20250216-2+dhi4",
+      "purl": "pkg:deb/debian/libncursesw6@6.5%2B20250216-2%2Bdhi4?arch=amd64&distro=debian-13.7&upstream=ncurses",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "deb"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:deb/debian/libpython-3.13-minimal@3.13.15-2?arch=amd64&distro=debian-13.7&upstream=python-3.13&package-id=8c9d0e1f2a3b4c5d",
+      "type": "library",
+      "name": "libpython-3.13-minimal",
+      "version": "3.13.15-2",
+      "purl": "pkg:deb/debian/libpython-3.13-minimal@3.13.15-2?arch=amd64&distro=debian-13.7&upstream=python-3.13",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "deb"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:deb/debian/zlib1g@1%3A1.3.dfsg%2Breally1.3.1-1%2Bdhi2?arch=amd64&distro=debian-13.7&upstream=zlib&package-id=9d0e1f2a3b4c5d6e",
+      "type": "library",
+      "name": "zlib1g",
+      "version": "1:1.3.dfsg+really1.3.1-1+dhi2",
+      "purl": "pkg:deb/debian/zlib1g@1%3A1.3.dfsg%2Breally1.3.1-1%2Bdhi2?arch=amd64&distro=debian-13.7&upstream=zlib",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "deb"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:deb/debian/libsqlite3-0@3.46.1-7%2Bdeb13u2%2Bdhi1?arch=amd64&distro=debian-13.7&upstream=sqlite3&package-id=0e1f2a3b4c5d6e7f",
+      "type": "library",
+      "name": "libsqlite3-0",
+      "version": "3.46.1-7+deb13u2+dhi1",
+      "purl": "pkg:deb/debian/libsqlite3-0@3.46.1-7%2Bdeb13u2%2Bdhi1?arch=amd64&distro=debian-13.7&upstream=sqlite3",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "deb"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "7e6d3487026e64b0",
+      "dependsOn": []
+    }
+  ]
+}

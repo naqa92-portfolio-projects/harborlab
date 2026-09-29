@@ -1,0 +1,12 @@
+# Rendered by Argo CD, which patches the signer identities with the deployed platform revision.
+resources:
+  - credentials.yaml
+  - dt-bridge.yaml
+  - network-policy.yaml
+# The DHI signing key pinned in the repository (.github/keys/dhi.pub links to this file): dt-bridge uses
+# a DHI OpenVEX only once its cosign signature verifies against it.
+configMapGenerator:
+  - name: dhi-public-key
+    namespace: dt-bridge
+    files:
+      - dhi.pub

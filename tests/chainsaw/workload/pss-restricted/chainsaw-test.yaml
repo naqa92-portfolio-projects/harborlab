@@ -1,0 +1,40 @@
+# A workload namespace is labelled Pod Security `restricted` by the platform (the test namespace only
+# carries the tier label), and a compliant image run as root is denied by Pod Security Admission.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-pss-restricted
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: the platform enforces Pod Security restricted on the workload namespace
+      try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: ($namespace)
+                labels:
+                  pod-security.kubernetes.io/enforce: restricted
+    - name: a pod running as root is denied
+      try:
+        - script:
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
+            check:
+              ($error != null): true
+              (contains($stderr, 'violates PodSecurity "restricted:latest"')): true
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: pss-restricted

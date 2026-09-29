@@ -1,0 +1,119 @@
+name: golden
+
+# Golden images are published from main; PRD branches (prd-*) publish too, signed with their own
+# branch identity, so the images exist before the merge.
+on:
+  push:
+    branches:
+      - main
+      - prd-*
+    paths:
+      - images/golden/**
+      - .github/workflows/golden.yml
+      - .github/workflows/build-image.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: golden-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  python:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: golden/python
+      context: images/golden/python
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+
+  java:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: golden/java
+      context: images/golden/java
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+
+  # Older versions kept for the catalog lifecycle, tagged <version>-sha-<commit> in the same repository.
+  python-3-10:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: golden/python
+      context: images/golden/python/3.10
+      tag-prefix: 3.10-
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+
+  java-26:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/build-image.yml
+    with:
+      image: golden/java
+      context: images/golden/java/26
+      tag-prefix: 26-
+    secrets:
+      DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+      DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+
+  # Proposes the newly built digests of the `supported` catalog entries as a pull request: main never
+  # receives a direct push, and older lifecycle entries (python 3.10, java 26) are left untouched.
+  catalog:
+    needs: [python, java]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      PYTHON_DIGEST: ${{ needs.python.outputs.digest }}
+      JAVA_DIGEST: ${{ needs.java.outputs.digest }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - name: Update the catalog with the newly built supported digests
+        run: |
+          yq -i '(.images[] | select(.name == "python" and .status == "supported") | .digest) = strenv(PYTHON_DIGEST)' images/catalog.yaml
+          yq -i '(.images[] | select(.name == "java" and .status == "supported") | .digest) = strenv(JAVA_DIGEST)' images/catalog.yaml
+          devbox run -- task catalog:generate
+
+      - name: Open a pull request when the catalog changed
+        run: |
+          if git diff --quiet -- images/catalog.yaml policies/params/golden-images.yaml docs/golden-images.md; then
+            echo "catalog already in step with the golden builds"
+            exit 0
+          fi
+          branch="catalog-update-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add images/catalog.yaml policies/params/golden-images.yaml docs/golden-images.md
+          git commit -m "chore(catalog): update supported golden digests"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore(catalog): update supported golden digests" \
+            --body "Automated: python and java golden builds published new digests for their \`supported\` catalog entries; regenerated Kyverno params and docs."

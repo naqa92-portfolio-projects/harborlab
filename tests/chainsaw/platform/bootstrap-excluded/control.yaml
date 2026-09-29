@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: platform-off-list
+spec:
+  # Admission is under test: no node matches, so the image is never pulled.
+  nodeSelector:
+    harborlab.io/e2e: unschedulable
+  containers:
+    - name: main
+      image: mcr.microsoft.com/azurelinux/busybox:1.36@sha256:d0156d3b44ad3702b5a34009028bba3e49e62237346951c86ffa1898cb14b45e

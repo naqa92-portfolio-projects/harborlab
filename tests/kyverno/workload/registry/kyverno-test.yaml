@@ -1,0 +1,31 @@
+# A compliant image served outside the workload allow-list fails the registry policy; the others pass it.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-registry
+policies:
+  - ../../../../policies/workload/registry.yaml
+resources:
+  - ../resources/pods.yaml
+variables: ../values.yaml
+context: ../context.yaml
+results:
+  - policy: workload-registry
+    isValidatingPolicy: true
+    kind: Pod
+    resources:
+      - workload-test/non-harbor-registry
+    result: fail
+  - policy: workload-registry
+    isValidatingPolicy: true
+    kind: Pod
+    resources:
+      - workload-test/compliant
+      - workload-test/unsigned
+      - workload-test/foreign-signer
+      - workload-test/eol-base
+      - workload-test/unknown-base
+      - workload-test/no-sbom
+      - workload-test/missing-labels
+      - workload-test/deprecated-base
+    result: pass

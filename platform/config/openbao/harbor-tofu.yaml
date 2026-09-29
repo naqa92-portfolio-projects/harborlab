@@ -1,0 +1,8 @@
+# Identity of `task harbor:configure` in OpenBao: Transit data keys for the OpenTofu state key and
+# `read` on the Harbor admin, robot and DHI credentials.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: harbor-tofu
+  namespace: openbao
+automountServiceAccountToken: false

@@ -1,0 +1,20 @@
+# E2E registry params: the policies/params/registries.yaml lists, plus the GHCR fixtures prefix for
+# workloads, since the ephemeral cluster has no Harbor.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harborlab-registries
+  namespace: kyverno
+data:
+  workload: |
+    harbor.127.0.0.1.nip.io/golden/
+    harbor.127.0.0.1.nip.io/apps/
+    ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/
+  platform: |
+    harbor.127.0.0.1.nip.io
+    docker.io
+    quay.io
+    ghcr.io
+    registry.k8s.io
+    dhi.io
+    reg.kyverno.io

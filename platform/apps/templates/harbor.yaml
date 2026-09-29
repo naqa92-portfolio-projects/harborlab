@@ -1,0 +1,71 @@
+# Harbor with its database on CloudNativePG; every chart secret comes from OpenBao through External
+# Secrets, because the chart's generated values change on each render and Argo CD would never settle.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: harbor
+  sources:
+    - repoURL: https://helm.goharbor.io
+      chart: harbor
+      targetRevision: 1.19.2
+      helm:
+        valuesObject:
+          externalURL: https://harbor.127.0.0.1.nip.io
+          expose:
+            type: route
+            # TLS terminates at the Cilium Gateway.
+            tls:
+              enabled: false
+            route:
+              parentRefs:
+                - group: gateway.networking.k8s.io
+                  kind: Gateway
+                  name: platform
+                  namespace: gateway
+                  sectionName: https
+              hosts:
+                - harbor.127.0.0.1.nip.io
+          existingSecretAdminPassword: harbor-admin
+          existingSecretSecretKey: harbor-internal
+          database:
+            type: external
+            external:
+              host: harbor-db-rw
+              port: "5432"
+              username: harbor
+              coreDatabase: harbor
+              existingSecret: harbor-db-credentials
+              sslmode: require
+          core:
+            existingSecret: harbor-internal
+            existingXsrfSecret: harbor-internal
+            secretName: harbor-token-service
+            # The chart's list of proxy-cache registry types omits quay; env overrides its ConfigMap.
+            extraEnvVars:
+              - name: PERMITTED_REGISTRY_TYPES_FOR_PROXY_CACHE
+                value: docker-hub,harbor,azure-acr,ali-acr,aws-ecr,google-gcr,docker-registry,github-ghcr,jfrog-artifactory,quay
+          jobservice:
+            existingSecret: harbor-internal
+          registry:
+            existingSecret: harbor-internal
+            credentials:
+              existingSecret: harbor-registry-credentials
+    - repoURL: {{ .Values.repoURL }}
+      targetRevision: {{ .Values.revision }}
+      path: platform/harbor
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true

@@ -1,0 +1,135 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://vex.example.invalid/public/vex-python-3.13-debian13",
+  "author": "Example Vendor <vex@example.invalid>",
+  "role": "Document Creator",
+  "timestamp": "2025-08-05T20:34:39Z",
+  "last_updated": "2026-09-26T11:09:54Z",
+  "version": 1,
+  "tooling": "Docker Scout",
+  "statements": [
+    {
+      "@id": "175dc971-06c8-48e6-a305-0f493f9ec805",
+      "vulnerability": {
+        "name": "CVE-2010-0928"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/openssl@3.5.7-1~deb13u2%2Bdhi1?os_distro=trixie&os_name=debian&os_version=13"
+        },
+        {
+          "@id": "pkg:deb/debian/openssl@3.5.7-1~deb13u2%2Bdhi1?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "Fault injection attacks are outside the OpenSSL threat model.",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "timestamp": "2025-08-05T20:34:39Z"
+    },
+    {
+      "@id": "2c9f4e0a-3b1d-4d57-8f6e-9a0b1c2d3e4f",
+      "vulnerability": {
+        "name": "CVE-2025-47273"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/setuptools@70.3.0"
+        },
+        {
+          "@id": "pkg:pypi/setuptools@70.3.0"
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "Only a stripped pkg_resources tree is vendored; the vulnerable module is absent.",
+      "justification": "vulnerable_code_not_present",
+      "timestamp": "2026-07-30T18:09:51Z"
+    },
+    {
+      "@id": "5d1e7b3c-8a2f-4c69-b0d4-6e7f8a9b0c1d",
+      "vulnerability": {
+        "name": "CVE-2025-69720"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/ncurses@6.5%2B20250216-2%2Bdhi4?os_distro=trixie&os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "Patch applied: standalone fix extracted from the upstream ncurses 6.5 patch 20251213.",
+      "justification": "inline_mitigations_already_exist",
+      "timestamp": "2026-01-12T09:00:00Z"
+    },
+    {
+      "@id": "fa90108e-d747-48c5-821d-fbcac15bb61b",
+      "vulnerability": {
+        "name": "GHSA-6v7p-g79w-8964"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/msgpack@1.1.2"
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "The vulnerable _cmsgpack C extension is not shipped.",
+      "justification": "vulnerable_code_not_present",
+      "timestamp": "2026-07-30T18:09:51Z"
+    },
+    {
+      "@id": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+      "vulnerability": {
+        "name": "CVE-2099-0001"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/python-3.13@3.13.15-2?os_distro=trixie&os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "status_notes": "The affected module is never imported by the interpreter start-up path.",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "timestamp": "2026-09-01T10:00:00Z"
+    },
+    {
+      "@id": "8b9c0d1e-2f3a-4b4c-9d5e-6f7a8b9c0d1e",
+      "vulnerability": {
+        "name": "CVE-2099-0002"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/zlib@1%3A1.3.dfsg%2Breally1.3.1-1%2Bdhi2?os_distro=trixie&os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "component_not_present",
+      "timestamp": "2026-09-01T10:00:00Z"
+    },
+    {
+      "@id": "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f",
+      "vulnerability": {
+        "name": "CVE-2099-0003"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/sqlite3@3.46.1-7%2Bdeb13u2%2Bdhi1?os_distro=trixie&os_name=debian&os_version=13"
+        }
+      ],
+      "status": "not_affected",
+      "impact_statement": "The vulnerable FTS5 code path requires a build option the package does not enable.",
+      "timestamp": "2026-09-01T10:00:00Z"
+    },
+    {
+      "@id": "dc84dba0-a00b-4d8b-85ee-0ce26100eea3",
+      "vulnerability": {
+        "name": "CVE-2026-17084"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/python-3.13@3.13.15-2?os_distro=trixie&os_name=debian&os_version=13"
+        }
+      ],
+      "status": "under_investigation",
+      "impact_statement": "Maintenance-branch backports are still under investigation.",
+      "timestamp": "2026-09-02T23:42:39Z"
+    }
+  ]
+}

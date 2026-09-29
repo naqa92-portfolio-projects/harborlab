@@ -1,0 +1,115 @@
+#!/usr/bin/env bats
+# Platform credentials, live against the cluster started by `task up`.
+# The audit role reads credential metadata only; values are measured through jq on their Kubernetes
+# Secret and never printed.
+
+REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+PLATFORM_KUBECONFIG="$REPO_ROOT/.kube/harborlab.yaml"
+OPENBAO_NAMESPACE=openbao
+OPENBAO_POD=openbao-0
+AUDIT_ROLE=platform-audit
+SECRET_STORE=openbao
+
+# One entry per platform credential:
+#   "<KV v2 path under mount secret/>|<field>|<namespace>/<Kubernetes Secret>|<Secret key>"
+# "-|-" as Secret and key: no workload consumes the credential in the cluster yet.
+PLATFORM_CREDENTIALS=(
+  "platform/harbor-admin|password|harbor/harbor-admin|HARBOR_ADMIN_PASSWORD"
+  "platform/harbor-db|username|harbor/harbor-db-credentials|username"
+  "platform/harbor-db|password|harbor/harbor-db-credentials|password"
+  "platform/harbor-robot-dt-bridge|username|dt-bridge/harbor-robot-dt-bridge|username"
+  "platform/harbor-robot-dt-bridge|password|dt-bridge/harbor-robot-dt-bridge|password"
+  "platform/dhi|username|registry-mirror-test/dhi-pull|.dockerconfigjson"
+  "platform/dhi|token|registry-mirror-test/dhi-pull|.dockerconfigjson"
+  "platform/dhi|username|dt-bridge/dhi-credentials|username"
+  "platform/dhi|token|dt-bridge/dhi-credentials|token"
+  "platform/dependency-track-db|username|dependency-track/dependency-track-db-credentials|username"
+  "platform/dependency-track-db|password|dependency-track/dependency-track-db-credentials|password"
+  "platform/dependency-track-admin|password|-|-"
+  "platform/dependency-track-api-key|api-key|dt-bridge/dependency-track-api-key|api-key"
+  "platform/grafana-admin|username|observability/grafana-admin|admin-user"
+  "platform/grafana-admin|password|observability/grafana-admin|admin-password"
+)
+
+fail() {
+  echo "$*" >&2
+  return 1
+}
+
+setup() {
+  [ -s "$PLATFORM_KUBECONFIG" ] || fail "platform is not up: $PLATFORM_KUBECONFIG missing (run task up)"
+  export KUBECONFIG="$PLATFORM_KUBECONFIG"
+}
+
+# Runs a shell script in the OpenBao container, logged in with the read-only audit role through
+# Kubernetes auth. The service account JWT goes through stdin, the OpenBao token stays in the pod.
+openbao_audit() {
+  local script="$1" jwt
+  shift
+  jwt="$(kubectl -n "$OPENBAO_NAMESPACE" create token "$AUDIT_ROLE" --duration=10m)"
+  [ -n "$jwt" ] || fail "cannot issue a token for ServiceAccount $OPENBAO_NAMESPACE/$AUDIT_ROLE"
+  printf '%s\n' "$jwt" | kubectl -n "$OPENBAO_NAMESPACE" exec -i "$OPENBAO_POD" -c openbao -- sh -ec '
+    read -r jwt
+    BAO_TOKEN="$(printf %s "$jwt" | bao write -field=token auth/kubernetes/login role='"$AUDIT_ROLE"' jwt=-)"
+    export BAO_TOKEN
+    '"$script" sh "$@"
+}
+
+@test "OpenBao holds every platform credential" {
+  run kubectl -n "$OPENBAO_NAMESPACE" exec "$OPENBAO_POD" -c openbao -- bao status -format=json
+  [ "$status" -eq 0 ] || fail "OpenBao is not initialized and unsealed (bao status exit $status): $output"
+  [ "$(jq -r '.initialized and (.sealed | not)' <<<"$output")" = true ] ||
+    fail "OpenBao is not initialized and unsealed: $output"
+
+  run openbao_audit 'bao secrets list -format=json'
+  [ "$status" -eq 0 ] || fail "login with Kubernetes auth role $AUDIT_ROLE or mount listing failed: $output"
+  [ "$(jq -r '."secret/" | "\(.type) \(.options.version)"' <<<"$output")" = "kv 2" ] ||
+    fail "OpenBao has no KV v2 engine mounted at secret/"
+
+  for credential in "${PLATFORM_CREDENTIALS[@]}"; do
+    IFS='|' read -r path _ _ _ <<<"$credential"
+    run openbao_audit 'bao kv metadata get -mount=secret -format=json "$1"' "$path"
+    [ "$status" -eq 0 ] || fail "OpenBao secret/$path metadata is not readable by $AUDIT_ROLE"
+    jq -e '.data.current_version as $v | $v > 0 and .data.versions[($v | tostring)].deletion_time == ""
+      and (.data.versions[($v | tostring)].destroyed | not)' <<<"$output" >/dev/null ||
+      fail "OpenBao secret/$path has no live current version: $(jq -c '.data | {current_version, versions}' <<<"$output")"
+  done
+}
+
+@test "credential Secrets are delivered only by External Secrets" {
+  run kubectl get clustersecretstores.external-secrets.io "$SECRET_STORE" -o json
+  [ "$status" -eq 0 ] || fail "ClusterSecretStore $SECRET_STORE not found: $output"
+  store="$output"
+  [ "$(jq -r '.status.conditions[]? | select(.type == "Ready") | .status' <<<"$store")" = True ] ||
+    fail "ClusterSecretStore $SECRET_STORE is not Ready: $(jq -c '.status' <<<"$store")"
+  [ "$(jq -r '.spec.provider.vault | "\(.path) \(.version) \(.auth.kubernetes != null)"' <<<"$store")" = "secret v2 true" ] ||
+    fail "ClusterSecretStore $SECRET_STORE does not read KV v2 mount secret/ with Kubernetes auth"
+
+  run kubectl get externalsecrets.external-secrets.io -A -o json
+  [ "$status" -eq 0 ] || fail "cannot list ExternalSecrets: $output"
+  not_ready="$(jq -r '.items[]
+    | select(any(.status.conditions[]?; .type == "Ready" and .status == "True") | not)
+    | "\(.metadata.namespace)/\(.metadata.name)"' <<<"$output")"
+  [ -z "$not_ready" ] || fail "ExternalSecrets not Ready: $not_ready"
+
+  for credential in "${PLATFORM_CREDENTIALS[@]}"; do
+    IFS='|' read -r path _ secret_ref key <<<"$credential"
+    [ "$secret_ref" != - ] || continue
+    namespace="${secret_ref%%/*}"
+    secret="${secret_ref#*/}"
+
+    run kubectl -n "$namespace" get secret "$secret" -o json
+    [ "$status" -eq 0 ] || fail "Secret $secret_ref not found"
+    [ "$(jq -r --arg k "$key" '.data[$k] // "" | length' <<<"$output")" -gt 0 ] ||
+      fail "Secret $secret_ref key $key is empty"
+    owner="$(jq -r '.metadata.ownerReferences[]? | select(.kind == "ExternalSecret" and .controller == true) | .name' <<<"$output")"
+    [ -n "$owner" ] || fail "Secret $secret_ref is not owned by an ExternalSecret"
+
+    run kubectl -n "$namespace" get externalsecrets.external-secrets.io "$owner" -o json
+    [ "$status" -eq 0 ] || fail "ExternalSecret $namespace/$owner not found"
+    [ "$(jq -r '.spec.secretStoreRef | "\(.kind)/\(.name)"' <<<"$output")" = "ClusterSecretStore/$SECRET_STORE" ] ||
+      fail "ExternalSecret $namespace/$owner does not use ClusterSecretStore $SECRET_STORE"
+    jq -e --arg p "$path" 'any(.spec.data[]?, .spec.dataFrom[]?.extract?; .remoteRef.key? // .key? | . == $p)' \
+      <<<"$output" >/dev/null || fail "ExternalSecret $namespace/$owner does not read OpenBao path secret/$path"
+  done
+}

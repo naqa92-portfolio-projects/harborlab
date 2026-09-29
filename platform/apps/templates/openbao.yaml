@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  source:
+    repoURL: https://openbao.github.io/openbao-helm
+    chart: openbao
+    targetRevision: 0.29.6
+    helm:
+      valuesObject:
+        injector:
+          enabled: false
+        server:
+          # Standalone with file storage; `task up` initialises and unseals it.
+          dataStorage:
+            size: 1Gi
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

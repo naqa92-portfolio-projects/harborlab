@@ -1,0 +1,37 @@
+# Workload tier: every image is served from an allowed prefix (data.workload of kyverno/harborlab-registries).
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: workload-registry
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+      # kubectl debug adds containers through this subresource.
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [pods/ephemeralcontainers]
+    namespaceSelector:
+      matchLabels:
+        harborlab.io/tier: workload
+  variables:
+    - name: containers
+      expression: >-
+        object.spec.containers + object.spec.?initContainers.orValue([]) + object.spec.?ephemeralContainers.orValue([])
+    - name: prefixes
+      expression: >-
+        resource.Get("v1", "configmaps", "kyverno", "harborlab-registries").?data.?workload.orValue("")
+          .split("\n").map(p, p.trim()).filter(p, p != "")
+    - name: offList
+      expression: >-
+        variables.containers.map(c, c.image).filter(i, !variables.prefixes.exists(p, i.startsWith(p)))
+  validations:
+    - expression: variables.offList.size() == 0
+      messageExpression: >-
+        "image is not served from an allowed workload registry: " + variables.offList.join(", ")

@@ -1,0 +1,51 @@
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: spike-verify-harbor
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        harborlab.io/tier: workload
+  matchImageReferences:
+    - glob: harbor.127.0.0.1.nip.io/spike/*
+  attestors:
+    - name: spike
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: ^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/spike\.yml@refs/.+$
+        ctlog:
+          url: https://rekor.sigstore.dev
+  attestations:
+    - name: cyclonedx
+      intoto:
+        type: https://cyclonedx.org/bom
+    - name: spdx
+      intoto:
+        type: https://spdx.dev/Document
+    - name: slsa
+      intoto:
+        type: https://slsa.dev/provenance/v1
+  validations:
+    - message: image is not signed by the spike workflow identity
+      expression: images.containers.map(image, verifyImageSignatures(image, [attestors.spike])).all(e, e > 0)
+    - message: image has no CycloneDX SBOM attestation signed by the spike workflow identity
+      expression: images.containers.map(image, verifyAttestationSignatures(image, attestations.cyclonedx, [attestors.spike])).all(e, e > 0)
+    - message: image has no SPDX SBOM attestation signed by the spike workflow identity
+      expression: images.containers.map(image, verifyAttestationSignatures(image, attestations.spdx, [attestors.spike])).all(e, e > 0)
+    - message: image has no SLSA v1 provenance attestation signed by the spike workflow identity
+      expression: images.containers.map(image, verifyAttestationSignatures(image, attestations.slsa, [attestors.spike])).all(e, e > 0)

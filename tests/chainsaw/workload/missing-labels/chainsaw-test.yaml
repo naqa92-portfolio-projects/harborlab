@@ -1,0 +1,30 @@
+# In a workload namespace, a pod whose image lacks the required OCI and io.harborlab.* labels is denied by workload-image-labels.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-missing-labels
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: admission denies the pod
+      try:
+        - script:
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
+            check:
+              ($error != null): true
+              (contains($stderr, 'workload-image-labels')): true
+              (contains($stderr, 'image is missing required labels')): true
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: missing-labels

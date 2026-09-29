@@ -1,0 +1,19 @@
+expose:
+  type: nodePort
+  tls:
+    enabled: true
+    certSource: secret
+    secret:
+      secretName: harbor-tls
+  nodePort:
+    name: harbor
+    ports:
+      http:
+        port: 80
+        nodePort: 30080
+      https:
+        port: 443
+        nodePort: 30443
+externalURL: https://harbor.127.0.0.1.nip.io
+trivy:
+  enabled: false

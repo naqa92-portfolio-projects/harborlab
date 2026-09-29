@@ -1,0 +1,40 @@
+# The local CA key pair lives in OpenBao (seeded by `task up`); cert-manager signs platform certificates with it.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: harborlab-ca
+  namespace: cert-manager
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: openbao
+  target:
+    name: harborlab-ca
+    template:
+      type: kubernetes.io/tls
+  data:
+    - secretKey: tls.crt
+      remoteRef:
+        key: platform/local-ca
+        property: tls.crt
+    - secretKey: tls.key
+      remoteRef:
+        key: platform/local-ca
+        property: tls.key
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: harborlab-ca
+spec:
+  ca:
+    secretName: harborlab-ca
+---
+# Identity of this namespace towards OpenBao (ClusterSecretStore openbao); no pod runs as it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-reader
+  namespace: cert-manager
+automountServiceAccountToken: false

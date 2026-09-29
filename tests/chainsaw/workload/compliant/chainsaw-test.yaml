@@ -1,0 +1,46 @@
+# In a workload namespace, the golden-path image (signed and attested by build-image.yml, supported
+# golden base, required labels, served from the allow-list) is admitted without warning, and every
+# workload policy reports a pass for it.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-compliant
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: admission accepts the pod without warning
+      try:
+        - script:
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
+            check:
+              ($error == null): true
+              (contains($stderr, 'Warning')): false
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: compliant
+    - name: every workload policy reports a pass for the pod
+      try:
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: compliant
+              (length(results[?policy == 'workload-image-signature' && result == 'pass']) > `0`): true
+              (length(results[?policy == 'workload-golden-base' && result == 'pass']) > `0`): true
+              (length(results[?policy == 'workload-golden-base-deprecated' && result == 'pass']) > `0`): true
+              (length(results[?policy == 'workload-image-labels' && result == 'pass']) > `0`): true
+              (length(results[?policy == 'workload-registry' && result == 'pass']) > `0`): true

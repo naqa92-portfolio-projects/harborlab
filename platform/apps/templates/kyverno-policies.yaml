@@ -1,0 +1,36 @@
+# Admission policies and their params (golden catalog, registry allow-lists); retries until the
+# Kyverno CRDs exist. Deployed from another branch than main, the build identity also trusts that branch.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.revision }}
+    path: policies
+    {{- if ne .Values.revision "main" }}
+    kustomize:
+      patches:
+        - target:
+            group: policies.kyverno.io
+            kind: ImageValidatingPolicy
+            name: workload-.*
+          patch: |-
+            - op: replace
+              path: /spec/attestors/0/cosign/keyless/identities/0/subjectRegExp
+              value: ^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/{{ include "harborlab.trustedRefs" . }}$
+    {{- end }}
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true

@@ -1,0 +1,42 @@
+name: dt-bridge-ci
+
+# dt-bridge unit tests and Python hygiene on every pull request touching the app; the image itself is
+# built by dt-bridge.yml through the golden path.
+on:
+  pull_request:
+    paths:
+      - apps/dt-bridge/**
+      - .github/workflows/dt-bridge-ci.yml
+
+permissions: {}
+
+concurrency:
+  group: dt-bridge-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: apps/dt-bridge
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+
+      - name: ruff check
+        run: uv run --frozen ruff check .
+
+      - name: ruff format --check
+        run: uv run --frozen ruff format --check .
+
+      - name: pytest
+        run: uv run --frozen pytest

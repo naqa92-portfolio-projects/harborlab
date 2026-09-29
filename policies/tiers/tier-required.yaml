@@ -1,0 +1,31 @@
+# Every namespace outside bootstrap belongs to a tier: pods are denied where harborlab.io/tier is neither
+# workload nor platform, so a missing or removed label never switches the workload rules off.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: tier-required
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [pods]
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [pods/ephemeralcontainers]
+    namespaceSelector:
+      matchExpressions:
+        - key: harborlab.io/tier
+          operator: NotIn
+          values: [workload, platform]
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, cilium, argocd, kyverno]
+  validations:
+    - expression: "false"
+      message: >-
+        pods run only in a namespace labelled harborlab.io/tier=workload or harborlab.io/tier=platform

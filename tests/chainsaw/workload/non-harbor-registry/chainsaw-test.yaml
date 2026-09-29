@@ -1,0 +1,30 @@
+# In a workload namespace, a pod whose image is compliant but served from outside the workload allow-list is denied by workload-registry.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-non-harbor-registry
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: admission denies the pod
+      try:
+        - script:
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
+            check:
+              ($error != null): true
+              (contains($stderr, 'workload-registry')): true
+              (contains($stderr, 'image is not served from an allowed workload registry')): true
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: non-harbor-registry

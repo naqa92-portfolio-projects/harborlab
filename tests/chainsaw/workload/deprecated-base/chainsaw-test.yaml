@@ -1,0 +1,45 @@
+# In a workload namespace, an image built on a base the catalog marks deprecated is admitted, with an
+# admission warning and a PolicyReport entry from workload-golden-base-deprecated (CEL policies report
+# `fail`; its Warn/Audit actions are what admit the pod).
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-deprecated-base
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: admission accepts the pod with a deprecation warning
+      try:
+        - script:
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
+            check:
+              ($error == null): true
+              (contains($stderr, 'Warning:')): true
+              (contains($stderr, 'workload-golden-base-deprecated')): true
+              (contains($stderr, 'image base is a deprecated golden image')): true
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: deprecated-base
+    - name: the pod's PolicyReport holds the deprecation result
+      try:
+        - assert:
+            resource:
+              apiVersion: wgpolicyk8s.io/v1alpha2
+              kind: PolicyReport
+              scope:
+                apiVersion: v1
+                kind: Pod
+                name: deprecated-base
+              (length(results[?policy == 'workload-golden-base-deprecated' && result == 'fail']) > `0`): true
+              (length(results[?policy == 'workload-golden-base' && result == 'pass']) > `0`): true

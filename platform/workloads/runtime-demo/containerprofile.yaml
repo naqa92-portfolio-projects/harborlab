@@ -1,0 +1,401 @@
+# Authored Kubescape profile of the runtime-demo container, found by node-agent as <pod label
+# kubescape.io/user-defined-profile>-<container>: enforced from container start instead of a learned
+# one. Recorded from the container's learned profile; a shell is not part of it. Argo CD cannot diff the
+# spec (storage lists profiles without it): harborlab.io/spec-sha256, the SHA-256 of `yq -o=json .spec |
+# jq -cS . | tr -d '\n'`, must change with the spec for a git change to sync.
+apiVersion: spdx.softwarecomposition.kubescape.io/v1beta1
+kind: ContainerProfile
+metadata:
+  name: runtime-demo-runtime-demo
+  namespace: runtime-demo
+  annotations:
+    kubescape.io/managed-by: User
+    harborlab.io/spec-sha256: "237a7d5576cb7581f1129353477dffe63a15e7e27a1b2f2891198d6fdf264471"
+spec:
+  architectures:
+    - amd64
+  capabilities:
+    - CAP_DAC_OVERRIDE
+    - CAP_DAC_READ_SEARCH
+    - CAP_SYS_ADMIN
+  execs:
+    - path: /usr/bin/python3.13
+      args:
+        - /usr/bin/python3
+        - -c
+        - import signal; signal.pause()
+  opens:
+    - path: /
+      flags:
+        - O_RDONLY
+        - O_NONBLOCK
+        - O_DIRECTORY
+        - O_CLOEXEC
+    - path: /etc/ld.so.cache
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /etc/localtime
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v2/libpython3.13.so.1.0
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v3/libpython3.13.so.1.0
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v4/libpython3.13.so.1.0
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /proc/⋯/task/1/fd
+      flags:
+        - O_RDONLY
+        - O_DIRECTORY
+        - O_CLOEXEC
+    - path: /proc/⋯/vm/overcommit_memory
+      flags:
+        - O_RDONLY
+    - path: /usr/bin/pybuilddir.txt
+      flags:
+        - O_RDONLY
+    - path: /usr/bin/python3.13._pth
+      flags:
+        - O_RDONLY
+    - path: /usr/bin/python3._pth
+      flags:
+        - O_RDONLY
+    - path: /usr/bin/pyvenv.cfg
+      flags:
+        - O_RDONLY
+    - path: /usr/lib/locale/C.UTF-8/LC_CTYPE
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/locale/C.utf8/LC_CTYPE
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/locale/C/LC_CTYPE
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/locale/UTF-8/LC_CTYPE
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/locale/locale-archive
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13
+      flags:
+        - O_NONBLOCK
+        - O_DIRECTORY
+        - O_CLOEXEC
+        - O_RDONLY
+    - path: /usr/lib/python3.13/__pycache__/enum.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/enum.cpython-313.pyc.127841424517776
+      flags:
+        - O_EXCL
+        - O_CLOEXEC
+        - O_WRONLY
+        - O_CREAT
+    - path: /usr/lib/python3.13/__pycache__/functools.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/functools.cpython-313.pyc.127841424336784
+      flags:
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/keyword.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/keyword.cpython-313.pyc.127841423036784
+      flags:
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/linecache.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/linecache.cpython-313.pyc.127841424332976
+      flags:
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+        - O_WRONLY
+    - path: /usr/lib/python3.13/__pycache__/operator.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/operator.cpython-313.pyc.127841423893184
+      flags:
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/reprlib.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/reprlib.cpython-313.pyc.127841423037360
+      flags:
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/signal.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/signal.cpython-313.pyc.127841424517488
+      flags:
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/types.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/__pycache__/types.cpython-313.pyc.127841424517776
+      flags:
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/collections/__init__.py
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/collections/__pycache__/__init__.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/collections/__pycache__/__init__.cpython-313.pyc.127841424339584
+      flags:
+        - O_CLOEXEC
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+    - path: /usr/lib/python3.13/encodings
+      flags:
+        - O_CLOEXEC
+        - O_RDONLY
+        - O_NONBLOCK
+        - O_DIRECTORY
+    - path: /usr/lib/python3.13/encodings/__init__.py
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/encodings/__pycache__/__init__.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/encodings/__pycache__/__init__.cpython-313.pyc.127841425712368
+      flags:
+        - O_CLOEXEC
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+    - path: /usr/lib/python3.13/encodings/__pycache__/aliases.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/encodings/__pycache__/aliases.cpython-313.pyc.127841425716176
+      flags:
+        - O_CLOEXEC
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+    - path: /usr/lib/python3.13/encodings/__pycache__/utf_8.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/encodings/__pycache__/utf_8.cpython-313.pyc.127841425716400
+      flags:
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/encodings/__pycache__/utf_8_sig.cpython-313.pyc
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/encodings/__pycache__/utf_8_sig.cpython-313.pyc.127841424334656
+      flags:
+        - O_WRONLY
+        - O_CREAT
+        - O_EXCL
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/encodings/aliases.py
+      flags:
+        - O_CLOEXEC
+        - O_RDONLY
+    - path: /usr/lib/python3.13/encodings/utf_8.py
+      flags:
+        - O_CLOEXEC
+        - O_RDONLY
+    - path: /usr/lib/python3.13/encodings/utf_8_sig.py
+      flags:
+        - O_CLOEXEC
+        - O_RDONLY
+    - path: /usr/lib/python3.13/enum.py
+      flags:
+        - O_CLOEXEC
+        - O_RDONLY
+    - path: /usr/lib/python3.13/functools.py
+      flags:
+        - O_CLOEXEC
+        - O_RDONLY
+    - path: /usr/lib/python3.13/keyword.py
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/lib-dynload
+      flags:
+        - O_RDONLY
+        - O_NONBLOCK
+        - O_DIRECTORY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/linecache.py
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/operator.py
+      flags:
+        - O_CLOEXEC
+        - O_RDONLY
+    - path: /usr/lib/python3.13/reprlib.py
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/signal.py
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/site-packages
+      flags:
+        - O_RDONLY
+        - O_NONBLOCK
+        - O_DIRECTORY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/site-packages/dhi-distpackages.pth
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3.13/types.py
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/python3/dist-packages
+      flags:
+        - O_NONBLOCK
+        - O_DIRECTORY
+        - O_CLOEXEC
+        - O_RDONLY
+    - path: /usr/lib/x86_64-linux-gnu/libc.so.6
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/x86_64-linux-gnu/libm.so.6
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/lib/x86_64-linux-gnu/libpython3.13.so.1.0
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+    - path: /usr/pyvenv.cfg
+      flags:
+        - O_RDONLY
+    - path: /usr/share/locale/locale.alias
+      flags:
+        - O_RDONLY
+        - O_CLOEXEC
+  syscalls:
+    - access
+    - arch_prctl
+    - brk
+    - capget
+    - capset
+    - chdir
+    - clone
+    - close
+    - close_range
+    - connect
+    - copy_file_range
+    - dup2
+    - epoll_ctl
+    - epoll_pwait
+    - execve
+    - exit
+    - exit_group
+    - faccessat2
+    - fadvise64
+    - fchown
+    - fcntl
+    - fstat
+    - fstatfs
+    - futex
+    - getcwd
+    - getdents64
+    - getegid
+    - geteuid
+    - getgid
+    - getpgrp
+    - getpid
+    - getppid
+    - getrandom
+    - gettid
+    - getuid
+    - ioctl
+    - lseek
+    - madvise
+    - mmap
+    - mprotect
+    - mremap
+    - munmap
+    - nanosleep
+    - newfstatat
+    - open
+    - openat
+    - openat2
+    - pause
+    - pipe2
+    - prctl
+    - pread64
+    - prlimit64
+    - read
+    - readlink
+    - recvfrom
+    - rseq
+    - rt_sigaction
+    - rt_sigprocmask
+    - rt_sigreturn
+    - set_robust_list
+    - set_tid_address
+    - setgid
+    - setgroups
+    - setuid
+    - sigaltstack
+    - socket
+    - statfs
+    - statx
+    - tgkill
+    - uname
+    - wait4
+    - write

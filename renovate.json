@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "ignorePaths": ["tests/**"],
+  "hostRules": [
+    {
+      "matchHost": "dhi.io",
+      "username": "{{ secrets.DHI_USERNAME }}",
+      "password": "{{ secrets.DHI_TOKEN }}"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "DHI bases of the golden images: digest bumps rebuild golden python and java",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["dhi.io/**"],
+      "groupName": "DHI golden bases"
+    },
+    {
+      "description": "DHI bases under images/golden are pinned lifecycle versions (3.10, 26, 21, 3.13): only digest updates, never a major/minor/patch version bump",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["dhi.io/**"],
+      "matchFileNames": ["images/golden/**"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "hello-java Tomcat version forced in the Spring Boot BOM override",
+      "managerFilePatterns": ["/^apps/hello-java/pom\\.xml$/"],
+      "matchStrings": ["<tomcat\\.version>(?<currentValue>[^<]+)</tomcat\\.version>"],
+      "depNameTemplate": "org.apache.tomcat.embed:tomcat-embed-core",
+      "datasourceTemplate": "maven"
+    }
+  ]
+}

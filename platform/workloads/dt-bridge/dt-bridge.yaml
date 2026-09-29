@@ -1,0 +1,252 @@
+# dt-bridge in a workload namespace under Pod Security restricted: Kyverno admits its Harbor image;
+# trust-manager writes the local CA (ConfigMap harborlab-trust) into it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dt-bridge
+  labels:
+    harborlab.io/tier: workload
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dt-bridge
+  namespace: dt-bridge
+automountServiceAccountToken: false
+---
+# Read-only access to the Kubescape runtime VEX documents, nothing else of Kubescape.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dt-bridge-vex-reader
+  namespace: kubescape
+rules:
+  - apiGroups: [spdx.softwarecomposition.kubescape.io]
+    resources: [openvulnerabilityexchangecontainers]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dt-bridge-vex-reader
+  namespace: kubescape
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dt-bridge-vex-reader
+subjects:
+  - kind: ServiceAccount
+    name: dt-bridge
+    namespace: dt-bridge
+---
+# Image posture metrics: the running containers of every namespace, and the golden image catalog.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dt-bridge-pod-reader
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dt-bridge-pod-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dt-bridge-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: dt-bridge
+    namespace: dt-bridge
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dt-bridge-catalog-reader
+  namespace: kyverno
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [golden-images]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dt-bridge-catalog-reader
+  namespace: kyverno
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dt-bridge-catalog-reader
+subjects:
+  - kind: ServiceAccount
+    name: dt-bridge
+    namespace: dt-bridge
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dt-bridge
+  namespace: dt-bridge
+  labels:
+    app.kubernetes.io/name: dt-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dt-bridge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dt-bridge
+    spec:
+      serviceAccountName: dt-bridge
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dt-bridge
+          image: harbor.127.0.0.1.nip.io/apps/dt-bridge@sha256:6c6d770346331b257eea4551edc58486df15a9d2448bfdb4ac720b1585c84cd7
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Python's default TLS context reads only this file: the golden image bakes no local CA.
+            - name: SSL_CERT_FILE
+              value: /etc/harborlab-trust/ca.crt
+            - name: HARBOR_CA_FILE
+              value: /etc/harborlab-trust/ca.crt
+            - name: HARBOR_URL
+              value: https://harbor.127.0.0.1.nip.io
+            - name: DT_URL
+              value: http://dependency-track-api-server.dependency-track.svc.cluster.local:8080
+            - name: GOVERNED_PROJECTS
+              value: golden,apps
+            - name: KUBESCAPE_NAMESPACE
+              value: kubescape
+            - name: VICTORIALOGS_URL
+              value: http://victoria-logs.observability.svc.cluster.local:9428
+            - name: GOLDEN_CATALOG_CONFIGMAP
+              value: kyverno/golden-images
+            # Build identities of the governed images: build-image.yml, and golden.yml for golden images.
+            - name: SIGNER_OIDC_ISSUER
+              value: https://token.actions.githubusercontent.com
+            - name: SIGNER_IDENTITY_GOLDEN
+              value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/(golden|build-image)\.yml@refs/heads/main
+            - name: SIGNER_IDENTITY_APPS
+              value: https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/main
+            # The repository the reusable build workflow must be called from (certificate source repository).
+            - name: SIGNER_REPOSITORY
+              value: naqa92-portfolio-projects/harborlab
+            - name: DHI_PUBLIC_KEY_FILE
+              value: /etc/dhi/dhi.pub
+            # The Sigstore trust root (TUF) is cached on the writable /tmp.
+            - name: XDG_CACHE_HOME
+              value: /tmp/cache
+            - name: XDG_DATA_HOME
+              value: /tmp/data
+            - name: HARBOR_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-robot-dt-bridge
+                  key: username
+            - name: HARBOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-robot-dt-bridge
+                  key: password
+            - name: DT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dependency-track-api-key
+                  key: api-key
+            - name: HARBOR_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-webhook
+                  key: token
+            - name: DHI_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: dhi-credentials
+                  key: username
+            - name: DHI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dhi-credentials
+                  key: token
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: harborlab-trust
+              mountPath: /etc/harborlab-trust
+              readOnly: true
+            - name: dhi-public-key
+              mountPath: /etc/dhi
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+      volumes:
+        - name: harborlab-trust
+          configMap:
+            name: harborlab-trust
+        - name: dhi-public-key
+          configMap:
+            name: dhi-public-key
+        - name: tmp
+          emptyDir: {}
+        # The ServiceAccount token, mounted in this container only.
+        - name: kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dt-bridge
+  namespace: dt-bridge
+spec:
+  selector:
+    app.kubernetes.io/name: dt-bridge
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

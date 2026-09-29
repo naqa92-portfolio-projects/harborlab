@@ -1,0 +1,8 @@
+# Machine output a command regenerates: collapsed in GitHub diffs.
+devbox.lock linguist-generated=true
+apps/dt-bridge/uv.lock linguist-generated=true
+tofu/harbor/.terraform.lock.hcl linguist-generated=true
+docs/golden-images.md linguist-generated=true
+policies/params/golden-images.yaml linguist-generated=true
+apps/dt-bridge/tests/fixtures/golden-python/** linguist-generated=true
+artifacts/** linguist-generated=true

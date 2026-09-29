@@ -1,0 +1,19 @@
+# Registry allow-lists read by the admission policies, one entry per line.
+# workload: image prefixes admitted in workload namespaces; platform: registry hosts allowed elsewhere.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harborlab-registries
+  namespace: kyverno
+data:
+  workload: |
+    harbor.127.0.0.1.nip.io/golden/
+    harbor.127.0.0.1.nip.io/apps/
+  platform: |
+    harbor.127.0.0.1.nip.io
+    docker.io
+    quay.io
+    ghcr.io
+    registry.k8s.io
+    dhi.io
+    reg.kyverno.io

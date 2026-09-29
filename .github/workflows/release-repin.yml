@@ -1,0 +1,135 @@
+name: release-repin
+
+# Post-merge re-pin (R10): once golden.yml's own catalog job has updated images/catalog.yaml on main,
+# only build-image.yml@refs/heads/main is trusted (T2), so every other pin still carrying a prd-* build
+# must be brought forward: the app Dockerfiles, then platform/workloads (once their build reacts to the
+# Dockerfile re-pin), then the demo fixtures commit. Each job is idempotent and opens a pull request only
+# when something changed; never pushes to main directly. `workloads` and `fixtures` wait for the sibling
+# build their step depends on, but only on the push that could have triggered one, so an unrelated push
+# (e.g. images/catalog.yaml alone) returns immediately instead of waiting out its timeout for nothing.
+# See scripts/release-repin.sh, .github/workflows/release-repin-e2e.yml (R11) and README "After merging".
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - images/catalog.yaml
+      - apps/hello-java/Dockerfile
+      - apps/dt-bridge/Dockerfile
+      - apps/runtime-demo/Dockerfile
+      - tests/fixtures/images/**
+      - scripts/publish-fixtures.sh
+      - scripts/release-repin.sh
+      - .github/workflows/release-repin.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-repin
+  cancel-in-progress: false
+
+# The empty tree: `git diff` base for a push whose previous commit is unknown to this shallow checkout
+# (e.g. the branch's first commit), so the diff below is against "everything is new" instead of failing.
+env:
+  EMPTY_TREE: 4b825dc642cb6eb9a060e54bf8d69288fbee4904
+
+jobs:
+  # images/catalog.yaml's supported digests moved: re-pin the app Dockerfile FROM lines built on them.
+  # A no-op when the Dockerfiles already match (most pushes matched by this workflow's own paths).
+  dockerfiles:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - run: devbox run -q -- ./scripts/release-repin.sh dockerfiles
+
+  # An app Dockerfile may now build on a newer golden digest: wait for build-image.yml to publish the
+  # image for this commit (triggered by the same push, running concurrently) and re-pin
+  # platform/workloads to it. Skipped when this push did not touch an app Dockerfile.
+  workloads:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+      packages: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          fetch-depth: 2
+
+      - name: Check whether this push re-pinned an app Dockerfile
+        id: gate
+        if: github.event_name == 'push'
+        run: |
+          base="HEAD^"
+          git rev-parse --verify --quiet "$base" >/dev/null || base="$EMPTY_TREE"
+          if git diff --quiet "$base" HEAD -- apps/hello-java/Dockerfile apps/dt-bridge/Dockerfile apps/runtime-demo/Dockerfile; then
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.skip != 'true'
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - if: steps.gate.outputs.skip != 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - if: steps.gate.outputs.skip != 'true'
+        run: devbox run -q -- ./scripts/release-repin.sh workloads "$GITHUB_SHA"
+
+  # The fixtures build for this commit may still be running (same push): wait for fixtures.yml to
+  # publish it and re-pin images/demo-fixtures.yaml. Skipped when this push did not touch a fixture.
+  fixtures:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+      packages: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          fetch-depth: 2
+
+      - name: Check whether this push published new fixtures
+        id: gate
+        if: github.event_name == 'push'
+        run: |
+          base="HEAD^"
+          git rev-parse --verify --quiet "$base" >/dev/null || base="$EMPTY_TREE"
+          if git diff --quiet "$base" HEAD -- tests/fixtures/images scripts/publish-fixtures.sh; then
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.skip != 'true'
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      - if: steps.gate.outputs.skip != 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - if: steps.gate.outputs.skip != 'true'
+        run: devbox run -q -- ./scripts/release-repin.sh fixtures "$GITHUB_SHA"

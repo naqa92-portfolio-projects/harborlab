@@ -1,0 +1,41 @@
+# Platform tier: the registry host of every image is in data.platform of kyverno/harborlab-registries.
+# Reported only. The bootstrap namespaces are excluded by name, even when labelled platform.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: platform-registry-allow-list
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchExpressions:
+        - key: harborlab.io/tier
+          operator: In
+          values: [platform]
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, cilium, argocd, kyverno]
+  variables:
+    - name: containers
+      expression: >-
+        object.spec.containers + object.spec.?initContainers.orValue([]) + object.spec.?ephemeralContainers.orValue([])
+    - name: registries
+      expression: >-
+        resource.Get("v1", "configmaps", "kyverno", "harborlab-registries").?data.?platform.orValue("")
+          .split("\n").map(r, r.trim()).filter(r, r != "")
+    - name: offList
+      expression: >-
+        variables.containers.map(c, c.image).filter(i, !(parseImageReference(i).registry() in variables.registries))
+  validations:
+    - expression: variables.offList.size() == 0
+      messageExpression: >-
+        "image registry is not in the platform allow-list: " + variables.offList.join(", ")

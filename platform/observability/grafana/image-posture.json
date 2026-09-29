@@ -1,0 +1,242 @@
+{
+  "uid": "image-posture",
+  "title": "Image posture",
+  "tags": [
+    "harborlab"
+  ],
+  "editable": false,
+  "schemaVersion": 41,
+  "version": 1,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "",
+  "templating": {
+    "list": [
+      {
+        "name": "golden",
+        "label": "Golden image",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "definition": "label_values(harborlab_image_vulnerabilities, golden)",
+        "query": {
+          "query": "label_values(harborlab_image_vulnerabilities, golden)",
+          "refId": "golden"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "bargauge",
+      "title": "CVEs by severity — before / after VEX",
+      "description": "Harbor Trivy report entries (OS and language packages) and Dependency-Track findings of the golden image, before and after the DHI OpenVEX not_affected statements.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (source, vex, severity) (harborlab_image_vulnerabilities{golden=\"$golden\", image=~\"golden/.+\"})",
+          "legendFormat": "{{source}} · {{vex}} VEX · {{severity}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Signed and attested running images",
+      "description": "Share of running containers built on the golden image whose cosign signature and CycloneDX, SPDX and SLSA attestations verify against the build identity.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(harborlab_running_containers{golden=\"$golden\", signed=\"true\", attested=\"true\"}) / sum(harborlab_running_containers{golden=\"$golden\"})",
+          "legendFormat": "verified share",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Admission violations",
+      "description": "Kyverno denials of the last 24 hours (API server audit log) of images built on the golden image, by policy.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (policy, action) (harborlab_admission_violations{golden=\"$golden\"})",
+          "legendFormat": "{{policy}} ({{action}})",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "bargauge",
+      "title": "Runtime alerts",
+      "description": "Kubescape runtime alerts of the last 24 hours (VictoriaLogs) on containers built on the golden image, by rule.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (rule) (harborlab_runtime_alerts{golden=\"$golden\"})",
+          "legendFormat": "{{rule}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

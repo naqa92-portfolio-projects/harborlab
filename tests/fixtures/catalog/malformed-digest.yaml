@@ -1,0 +1,14 @@
+# The second entry's digest is not sha256:<64 lowercase hex>.
+images:
+  - name: python
+    version: "3.13"
+    digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+    status: supported
+    released: "2026-09-01"
+    eol: "2029-10-31"
+  - name: java
+    version: "21"
+    digest: sha256:2222abc
+    status: supported
+    released: "2025-01-15"
+    eol: "2027-01-15"

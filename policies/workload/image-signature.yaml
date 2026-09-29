@@ -1,0 +1,72 @@
+# Workload tier: every image is signed by the harborlab build-image workflow and carries its CycloneDX,
+# SPDX and SLSA v1 attestations; admitted images are rewritten to their digest.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: workload-image-signature
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 30
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+      # kubectl debug adds containers through this subresource.
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [pods/ephemeralcontainers]
+    namespaceSelector:
+      matchLabels:
+        harborlab.io/tier: workload
+  matchImageReferences:
+    - glob: "*"
+  validationConfigurations:
+    mutateDigest: true
+  attestors:
+    - name: build
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: ^https://github\.com/naqa92-portfolio-projects/harborlab/\.github/workflows/build-image\.yml@refs/heads/main$
+        ctlog:
+          url: https://rekor.sigstore.dev
+  attestations:
+    - name: cyclonedx
+      intoto:
+        type: https://cyclonedx.org/bom
+    - name: spdx
+      intoto:
+        type: https://spdx.dev/Document
+    - name: slsa
+      intoto:
+        type: https://slsa.dev/provenance/v1
+  variables:
+    - name: images
+      expression: >-
+        images.?containers.orValue([]) + images.?initContainers.orValue([]) + images.?ephemeralContainers.orValue([])
+  validations:
+    - expression: >-
+        variables.images.all(ref, verifyImageSignatures(ref, [attestors.build]) > 0)
+      message: image is not signed by the harborlab build-image workflow
+    - expression: >-
+        variables.images.all(ref, verifyAttestationSignatures(ref, attestations.cyclonedx, [attestors.build]) > 0)
+      message: image has no CycloneDX SBOM attestation signed by the harborlab build-image workflow
+    - expression: >-
+        variables.images.all(ref, verifyAttestationSignatures(ref, attestations.spdx, [attestors.build]) > 0)
+      message: image has no SPDX SBOM attestation signed by the harborlab build-image workflow
+    # The reusable build-image.yml signs with its own identity whoever calls it: the verified provenance
+    # names the calling repository, which must be this one.
+    - expression: >-
+        variables.images.all(ref,
+          verifyAttestationSignatures(ref, attestations.slsa, [attestors.build]) > 0
+            && extractPayload(ref, attestations.slsa).predicate.buildDefinition.externalParameters
+              .?workflow.?repository.orValue("") == "https://github.com/naqa92-portfolio-projects/harborlab")
+      message: >-
+        image has no SLSA provenance attestation signed by the harborlab build-image workflow for a build of
+        the naqa92-portfolio-projects/harborlab repository

@@ -1,0 +1,39 @@
+# In a workload namespace, an admitted pod referencing a tag is stored with the digest that tag
+# resolves to (crane reads the registry at test time).
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-digest-mutation
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: admission accepts the pod referenced by tag
+      try:
+        - script:
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
+            check:
+              ($error == null): true
+    - name: the stored image reference ends with the tag's digest
+      try:
+        - script:
+            content: |
+              set -eu
+              TAGGED="$(../../../fixtures/fixture-tag.sh pod.yaml | yq '.spec.containers[0].image')"
+              echo "applied image: $TAGGED"
+              want="$(crane digest "$TAGGED")"
+              got="$(kubectl get pod digest-mutation -n "$NAMESPACE" -o jsonpath='{.spec.containers[0].image}')"
+              echo "stored image: $got"
+              case "$got" in
+                *"@$want") ;;
+                *) echo "stored image $got does not end with @$want" >&2; exit 1 ;;
+              esac
+            check:
+              ($error == null): true

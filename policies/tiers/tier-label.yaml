@@ -1,0 +1,34 @@
+# The tier of a namespace is set by platform administrators: anyone else may only put a new or unlabelled
+# namespace in the workload tier, never remove the harborlab.io/tier label, change it or choose platform.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: tier-label
+spec:
+  validationActions: [Deny]
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+  # Platform administrators: cluster admins (kind grants kubeadm:cluster-admins) and Argo CD, which syncs
+  # the tier labels from git.
+  matchConditions:
+    - name: not-a-platform-admin
+      expression: >-
+        !request.userInfo.groups.exists(g, g in ["system:masters", "kubeadm:cluster-admins"])
+          && request.userInfo.username != "system:serviceaccount:argocd:argocd-application-controller"
+  variables:
+    - name: tier
+      expression: object.metadata.?labels[?"harborlab.io/tier"].orValue("")
+    - name: previous
+      expression: >-
+        request.operation == "CREATE" ? "" : oldObject.metadata.?labels[?"harborlab.io/tier"].orValue("")
+  validations:
+    - expression: >-
+        variables.previous == "" ? variables.tier in ["", "workload"] : variables.tier == variables.previous
+      messageExpression: >-
+        "only platform administrators can set, remove or change the harborlab.io/tier label ('"
+          + variables.previous + "' to '" + variables.tier + "')"

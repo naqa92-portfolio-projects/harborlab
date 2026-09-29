@@ -1,0 +1,21 @@
+admissionController:
+  replicas: 1
+  container:
+    extraEnvVars:
+      # Go reads every PEM file of these directories on top of the image's system roots.
+      - name: SSL_CERT_DIR
+        value: /etc/ssl/certs:/etc/harbor-ca
+  extraVolumes:
+    - name: harbor-ca
+      configMap:
+        name: harbor-ca
+  extraVolumeMounts:
+    - name: harbor-ca
+      mountPath: /etc/harbor-ca
+      readOnly: true
+backgroundController:
+  replicas: 1
+cleanupController:
+  enabled: false
+reportsController:
+  replicas: 1

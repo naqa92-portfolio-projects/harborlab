@@ -1,0 +1,27 @@
+# ClusterIssuer harborlab-ca signs with the local CA every client of the platform trusts: only the gateway
+# namespace may request certificates from it, directly (CertificateRequest) or through a Certificate.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: harborlab-ca-issuer-scope
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [cert-manager.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [certificates, certificaterequests]
+  validations:
+    - expression: >-
+        !(has(object.spec.issuerRef.kind) && object.spec.issuerRef.kind == 'ClusterIssuer'
+        && object.spec.issuerRef.name == 'harborlab-ca') || request.namespace in ['gateway']
+      message: ClusterIssuer harborlab-ca issues certificates for the gateway namespace only
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: harborlab-ca-issuer-scope
+spec:
+  policyName: harborlab-ca-issuer-scope
+  validationActions: [Deny]

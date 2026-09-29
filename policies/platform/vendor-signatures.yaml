@@ -1,0 +1,73 @@
+# Platform tier: Kyverno, Cilium and Argo CD images verify against their vendor's keyless GitHub Actions
+# identity. Reported only; other images are not matched. Bootstrap namespaces are excluded by name.
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: platform-vendor-signatures
+spec:
+  validationActions: [Audit]
+  failurePolicy: Ignore
+  webhookConfiguration:
+    timeoutSeconds: 30
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchExpressions:
+        - key: harborlab.io/tier
+          operator: In
+          values: [platform]
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, cilium, argocd, kyverno]
+  matchImageReferences:
+    - glob: reg.kyverno.io/kyverno/*
+    - glob: ghcr.io/kyverno/*
+    - glob: quay.io/cilium/*
+    - glob: quay.io/argoproj/*
+  attestors:
+    - name: kyverno
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: ^https://github\.com/kyverno/kyverno/\.github/workflows/[^@]+@refs/tags/v.+$
+        ctlog:
+          url: https://rekor.sigstore.dev
+        source:
+          repository: ghcr.io/kyverno/signatures
+    - name: cilium
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: ^https://github\.com/cilium/cilium/\.github/workflows/[^@]+@refs/tags/v.+$
+        ctlog:
+          url: https://rekor.sigstore.dev
+    - name: argocd
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: ^https://github\.com/argoproj/argo-cd/\.github/workflows/[^@]+@refs/tags/v.+$
+        ctlog:
+          url: https://rekor.sigstore.dev
+  variables:
+    - name: images
+      expression: >-
+        images.?containers.orValue([]) + images.?initContainers.orValue([]) + images.?ephemeralContainers.orValue([])
+  validations:
+    - expression: >-
+        variables.images.all(ref,
+          ref.startsWith("quay.io/cilium/") ? verifyImageSignatures(ref, [attestors.cilium]) > 0
+          : ref.startsWith("quay.io/argoproj/") ? verifyImageSignatures(ref, [attestors.argocd]) > 0
+          : ref.startsWith("reg.kyverno.io/kyverno/") || ref.startsWith("ghcr.io/kyverno/")
+            ? verifyImageSignatures(ref, [attestors.kyverno]) > 0
+          : true)
+      message: image is not signed by its vendor

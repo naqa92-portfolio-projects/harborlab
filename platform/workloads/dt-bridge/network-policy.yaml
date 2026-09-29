@@ -1,0 +1,69 @@
+# dt-bridge accepts only Harbor's webhook calls and the VictoriaMetrics scrape, and reaches only what it
+# forwards between: Harbor (through the Gateway), dhi.io, Dependency-Track, VictoriaLogs and the API server.
+# Kubelet probes come from the host.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: dt-bridge
+  namespace: dt-bridge
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities:
+        - host
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: harbor
+            app: harbor
+          matchExpressions:
+            - key: component
+              operator: In
+              values: [core, jobservice]
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            app.kubernetes.io/instance: victoria-metrics
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: dependency-track
+            app.kubernetes.io/name: dependency-track-api-server
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            app.kubernetes.io/instance: victoria-logs
+      toPorts:
+        - ports:
+            - port: "9428"
+              protocol: TCP
+    # Harbor through the Gateway: its Envoy checks this egress policy against the backend, harbor-core,
+    # at L3 only (a port on this rule makes Envoy answer 403).
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: harbor
+            app: harbor
+            component: core
+    # dhi.io and its token service.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

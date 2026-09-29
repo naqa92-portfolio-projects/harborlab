@@ -1,0 +1,30 @@
+# In a workload namespace, a pod whose image was built on a base absent from the catalog is denied by workload-golden-base.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-unknown-base
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    - name: admission denies the pod
+      try:
+        - script:
+            content: ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f -
+            check:
+              ($error != null): true
+              (contains($stderr, 'workload-golden-base')): true
+              (contains($stderr, 'image base is not a golden image of the catalog')): true
+        - error:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: unknown-base

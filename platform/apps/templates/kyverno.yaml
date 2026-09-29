@@ -1,0 +1,81 @@
+# Kyverno admission (CEL policy types only). The bootstrap namespaces stay outside the policies.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true,IncludeMutationWebhook=true
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: 3.9.1
+    helm:
+      valuesObject:
+        # The chart's post-delete hook keeps Argo CD out of sync and blocks pruning.
+        config:
+          preserve: false
+        webhookLabels:
+          app.kubernetes.io/managed-by: argocd
+        # Image verification on Harbor trusts the local CA from the trust-manager Bundle
+        # kyverno-harborlab-ca next to the system roots: the chart's caCertificates would replace them.
+        admissionController:
+          container:
+            extraEnvVars:
+              - name: SSL_CERT_DIR
+                value: /etc/ssl/certs:/etc/harborlab-ca
+          extraVolumes:
+            - name: harborlab-ca
+              configMap:
+                name: kyverno-harborlab-ca
+          extraVolumeMounts:
+            - name: harborlab-ca
+              mountPath: /etc/harborlab-ca
+              readOnly: true
+        reportsController:
+          # Under the chart's 128Mi limit it lost its leader lease and crash-looped after a node restart.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          # Background reports of the policies matching kubectl debug's subresource.
+          rbac:
+            clusterRole:
+              extraResources:
+                - apiGroups: [""]
+                  resources: [pods/ephemeralcontainers]
+                  verbs: [get, list, watch]
+          extraEnvVars:
+            - name: SSL_CERT_DIR
+              value: /etc/ssl/certs:/etc/harborlab-ca
+          extraVolumes:
+            - name: harborlab-ca
+              configMap:
+                name: kyverno-harborlab-ca
+          extraVolumeMounts:
+            - name: harborlab-ca
+              mountPath: /etc/harborlab-ca
+              readOnly: true
+  ignoreDifferences:
+    {{- toYaml .Values.webhookCaBundleDifferences | nindent 4 }}
+    # Aggregated ClusterRoles are filled in by the controller manager.
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+      jsonPointers:
+        - /rules
+  syncPolicy:
+    {{- toYaml .Values.syncPolicy | nindent 4 }}
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

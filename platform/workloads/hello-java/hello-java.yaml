@@ -1,0 +1,106 @@
+# hello-java in a workload namespace under Pod Security restricted: Kyverno admits its Harbor image;
+# trust-manager writes the local CA (ConfigMap harborlab-trust) into it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hello-java
+  labels:
+    harborlab.io/tier: workload
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hello-java
+  namespace: hello-java
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-java
+  namespace: hello-java
+  labels:
+    app.kubernetes.io/name: hello-java
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hello-java
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hello-java
+    spec:
+      serviceAccountName: hello-java
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: hello-java
+          image: harbor.127.0.0.1.nip.io/apps/hello-java@sha256:6ac6925e536d65164f9afeef6622770b7e38f0d70aa3f4361a3fa24c06958a73
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # The JVM default trust store becomes the bundle's password-less PKCS#12 holding the local CA.
+            - name: JAVA_TOOL_OPTIONS
+              value: >-
+                -Djavax.net.ssl.trustStore=/etc/harborlab-trust/truststore.p12
+                -Djavax.net.ssl.trustStoreType=PKCS12
+                -XX:MaxRAMPercentage=75
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: harborlab-trust
+              mountPath: /etc/harborlab-trust
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: harborlab-trust
+          configMap:
+            name: harborlab-trust
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-java
+  namespace: hello-java
+spec:
+  selector:
+    app.kubernetes.io/name: hello-java
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

@@ -1,0 +1,60 @@
+# Target of `task demo:runtime-shell` in a workload namespace under Pod Security restricted: Kyverno admits
+# its Harbor image like any application's. It serves nothing and waits; its image carries a shell.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: runtime-demo
+  labels:
+    harborlab.io/tier: workload
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: runtime-demo
+  namespace: runtime-demo
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runtime-demo
+  namespace: runtime-demo
+  labels:
+    app.kubernetes.io/name: runtime-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: runtime-demo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: runtime-demo
+        # node-agent enforces the authored ContainerProfile runtime-demo-runtime-demo (containerprofile.yaml) instead of
+        # learning one, so any shell run in the container is unexpected.
+        kubescape.io/user-defined-profile: runtime-demo
+    spec:
+      serviceAccountName: runtime-demo
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runtime-demo
+          image: harbor.127.0.0.1.nip.io/apps/runtime-demo@sha256:abbe4b0d6334e66d1f24dc3c6d0365ab32a90f05680088612413f9cbad868238
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

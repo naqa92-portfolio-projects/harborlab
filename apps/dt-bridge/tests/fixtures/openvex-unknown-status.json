@@ -1,0 +1,21 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://vex.example.invalid/public/vex-unknown-status",
+  "author": "Example Vendor <vex@example.invalid>",
+  "timestamp": "2026-09-01T10:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2010-0928"
+      },
+      "products": [
+        {
+          "@id": "pkg:deb/debian/openssl@3.5.7-1~deb13u2%2Bdhi1?os_name=debian&os_version=13"
+        }
+      ],
+      "status": "wont_fix",
+      "timestamp": "2026-09-01T10:00:00Z"
+    }
+  ]
+}

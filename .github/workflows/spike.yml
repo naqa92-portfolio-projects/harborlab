@@ -1,0 +1,116 @@
+name: spike
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - spike/hello/**
+      - .github/workflows/spike.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: spike-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/spike/hello
+  BASE_IMAGE: docker.io/library/busybox:1.37.0
+  BASE_DIGEST: sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: spike/hello
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ env.IMAGE }}:m0
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: false
+
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Write SLSA v1 provenance predicate
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          BUILDER_ID: ${{ github.server_url }}/${{ github.workflow_ref }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          jq -n \
+            --arg builder "$BUILDER_ID" --arg run "$RUN_URL" --arg repo "$REPO_URL" \
+            --arg ref "$GITHUB_REF" --arg sha "$GITHUB_SHA" --arg event "$EVENT_NAME" \
+            --arg base "$BASE_IMAGE" --arg base_digest "${BASE_DIGEST#sha256:}" \
+            '{
+              buildDefinition: {
+                buildType: "https://actions.github.io/buildtypes/workflow/v1",
+                externalParameters: {workflow: {ref: $ref, repository: $repo, path: ".github/workflows/spike.yml"}},
+                internalParameters: {github: {event_name: $event}},
+                resolvedDependencies: [
+                  {uri: ("git+" + $repo + "@" + $ref), digest: {gitCommit: $sha}},
+                  {uri: ("oci://" + $base), digest: {sha256: $base_digest}}
+                ]
+              },
+              runDetails: {builder: {id: $builder}, metadata: {invocationId: $run}}
+            }' >provenance.json
+
+      - name: Sign and attest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          ref="$IMAGE@$DIGEST"
+          cosign sign --yes "$ref"
+          cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$ref"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$ref"
+          cosign attest --yes --type slsaprovenance1 --predicate provenance.json "$ref"
+
+      - name: Verify on GHCR
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+        run: |
+          ref="$IMAGE@$DIGEST"
+          issuer=https://token.actions.githubusercontent.com
+          cosign verify --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$issuer" "$ref" >/dev/null
+          for type in cyclonedx spdxjson slsaprovenance1; do
+            cosign verify-attestation --type "$type" --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer "$issuer" "$ref" >/dev/null
+          done
+          echo "verified $ref"

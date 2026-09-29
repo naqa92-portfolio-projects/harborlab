@@ -1,0 +1,42 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: harborlab
+networking:
+  # Cilium is the CNI and replaces kube-proxy.
+  disableDefaultCNI: true
+  kubeProxyMode: none
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+    extraPortMappings:
+      # Cilium Gateway API listener on the node's host network, published as https://*.127.0.0.1.nip.io.
+      - containerPort: 443
+        hostPort: 443
+        listenAddress: 127.0.0.1
+        protocol: TCP
+    # API server audit events on its stdout, where the log collector reads them. The relative host path
+    # is resolved from the repository root, where `task up` runs kind.
+    extraMounts:
+      - hostPath: platform/kind/audit-policy.yaml
+        containerPath: /etc/kubernetes/policies/audit-policy.yaml
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          # kubeadm v1beta4 argument list, merged by kind into its own.
+          extraArgs:
+            - name: audit-log-path
+              value: "-"
+            - name: audit-policy-file
+              value: /etc/kubernetes/policies/audit-policy.yaml
+          extraVolumes:
+            - name: audit-policies
+              hostPath: /etc/kubernetes/policies
+              mountPath: /etc/kubernetes/policies
+              readOnly: true
+              pathType: DirectoryOrCreate
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"

@@ -1,0 +1,64 @@
+# In a workload namespace, `kubectl debug` cannot add an ephemeral container that admission would deny
+# as a regular container: an image outside Harbor golden/apps, or an unsigned image. The debug container
+# follows Pod Security restricted (--profile=restricted), so only the workload policies can refuse it.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: workload-ephemeral-container
+spec:
+  namespaceTemplate:
+    metadata:
+      labels:
+        harborlab.io/tier: workload
+  timeouts:
+    apply: 60s
+    assert: 150s
+    error: 30s
+    exec: 120s
+  steps:
+    # Setup only: a cold image-verification cache can exceed the webhook timeout on the first call.
+    - name: the compliant target pod is admitted
+      try:
+        - script:
+            timeout: 300s
+            content: |
+              for attempt in 1 2 3; do
+                ../../../fixtures/fixture-tag.sh pod.yaml | kubectl apply -n "$NAMESPACE" -f - && exit 0
+                sleep 10
+              done
+              exit 1
+            check:
+              ($error == null): true
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: debug-target
+    - name: a Docker Hub debug container is denied by workload-registry
+      try:
+        - script:
+            content: >-
+              kubectl debug -n "$NAMESPACE" debug-target --container=debug-dockerhub --profile=restricted
+              --image=docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+              -- sleep 3600
+            check:
+              ($error != null): true
+              (contains($stderr, 'workload-registry')): true
+    - name: an unsigned debug container is denied by workload-image-signature
+      try:
+        - script:
+            content: >-
+              kubectl debug -n "$NAMESPACE" debug-target --container=debug-unsigned --profile=restricted
+              --image="ghcr.io/naqa92-portfolio-projects/harborlab/fixtures/unsigned:$(../../../fixtures/fixture-tag.sh)"
+              -- sleep 3600
+            check:
+              ($error != null): true
+              (contains($stderr, 'workload-image-signature')): true
+    - name: the pod holds no ephemeral container
+      try:
+        - script:
+            content: kubectl get pod -n "$NAMESPACE" debug-target -o jsonpath='{.spec.ephemeralContainers[*].name}'
+            check:
+              ($error == null): true
+              ($stdout == ''): true

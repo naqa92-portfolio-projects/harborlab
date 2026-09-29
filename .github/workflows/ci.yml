@@ -1,0 +1,57 @@
+name: ci
+
+# Drift and hygiene checks (R12): every tests/ci/*.bats and tests/docs/*.bats suite, blocking. Runs
+# offline, against manifests and scripts only (no live cluster) — see each suite's own header.
+# tests/supply-chain/repository_rules.bats needs the human-created GitHub ruleset and lives in the
+# repository_rules workflow instead. "DHI token value is not committed" needs DHI_TOKEN, a repository
+# secret unavailable to a fork pull_request: skipped there, visibly, rather than weakened.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - prd-*
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bats:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # Full history: tests/ci/secrets.bats scans every commit of the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+
+      # tests/ci/python_lint.bats runs dt-bridge's ruff through uv, same as dt-bridge-ci.yml.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+
+      - name: tests/ci (excluding secrets.bats and repository_rules.bats) and tests/docs
+        run: |
+          files=$(find tests/ci tests/docs -maxdepth 1 -name '*.bats' \
+            ! -name repository_rules.bats ! -name secrets.bats | sort)
+          devbox run -- bats $files
+
+      - name: tests/ci/secrets.bats
+        env:
+          DHI_TOKEN: ${{ secrets.DHI_TOKEN }}
+          IS_FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          if [ "$IS_FORK_PR" = "true" ]; then
+            echo "::warning::fork pull request: DHI_TOKEN is not available, skipping 'DHI token value is not committed'"
+            devbox run -- bats --negative-filter 'DHI token value is not committed' tests/ci/secrets.bats
+          else
+            devbox run -- bats tests/ci/secrets.bats
+          fi

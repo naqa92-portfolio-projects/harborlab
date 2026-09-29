@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vendor-kyverno
+spec:
+  # Admission is under test: no node matches, so the image is never pulled.
+  nodeSelector:
+    harborlab.io/e2e: unschedulable
+  containers:
+    - name: main
+      image: reg.kyverno.io/kyverno/kyverno:v1.19.1@sha256:b31d8511ae5fd6010e2a01ea72ebae08eb82fa51d91af14a1d9fe989949b4edb
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vendor-cilium
+spec:
+  # Admission is under test: no node matches, so the image is never pulled.
+  nodeSelector:
+    harborlab.io/e2e: unschedulable
+  containers:
+    - name: main
+      image: quay.io/cilium/cilium:v1.20.2@sha256:2939231d0d3e3ebddcd80fffa168b7ddcc78fdf0dc864d1c8c126ff523c54f01
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vendor-argocd
+spec:
+  # Admission is under test: no node matches, so the image is never pulled.
+  nodeSelector:
+    harborlab.io/e2e: unschedulable
+  containers:
+    - name: main
+      image: quay.io/argoproj/argocd:v3.5.3@sha256:dd3f47d5a5e4da563a7a398506e892481b358a7cec50abdf320c71aa55904bfa
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vendor-unsigned
+spec:
+  # Admission is under test: no node matches, so the image is never pulled.
+  nodeSelector:
+    harborlab.io/e2e: unschedulable
+  containers:
+    - name: main
+      image: quay.io/argoproj/argocd:v2.4.0@sha256:390f86e5f9dd9bb82a11d75ce6e1f7591d521a5690bf1c55ac266e2456a2aac6

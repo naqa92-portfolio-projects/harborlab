@@ -1,0 +1,116 @@
+version: '3'
+
+# Local secrets (DHI_TOKEN) come from the git-ignored .env when present; CI sets them in the environment.
+dotenv: ['.env']
+
+vars:
+  # Namespace of the admission demos (task demo:<scenario> NAMESPACE=<ns>): a platform workload namespace.
+  NAMESPACE: runtime-demo
+
+tasks:
+  up:
+    desc: Create or converge the kind platform; returns once every Argo CD Application is stable
+    cmds:
+      - ./scripts/platform-up.sh
+
+  harbor:configure:
+    desc: Seed missing robot secrets in OpenBao, then apply the OpenTofu Harbor configuration (tofu/harbor)
+    cmds:
+      - ./scripts/harbor-tofu.sh configure
+
+  harbor:plan:
+    desc: Plan the OpenTofu Harbor configuration; exits 0 only when nothing would change
+    cmds:
+      - ./scripts/harbor-tofu.sh plan
+
+  harbor:tofu:
+    desc: 'Run tofu <args> in tofu/harbor with the OpenBao and Harbor environment (task harbor:tofu -- show -json)'
+    silent: true
+    cmds:
+      - ./scripts/harbor-tofu.sh tofu {{.CLI_ARGS}}
+
+  down:
+    desc: Delete the kind platform and its isolated kubeconfig
+    cmds:
+      - ./scripts/platform-down.sh
+
+  catalog:validate:
+    desc: 'Validate the golden image catalog (default images/catalog.yaml; task catalog:validate -- <file>)'
+    cmds:
+      - ./scripts/catalog.sh validate {{.CLI_ARGS}}
+
+  catalog:generate:
+    desc: Write the Kyverno params ConfigMap and the catalog doc from images/catalog.yaml
+    cmds:
+      - ./scripts/catalog.sh generate
+
+  catalog:check:
+    desc: Fail when the generated catalog files differ from what catalog:generate would write
+    cmds:
+      - ./scripts/catalog.sh check
+
+  lint:
+    desc: 'Platform lint of the repository, or of another git work tree (task lint -- <dir>)'
+    cmds:
+      - ./scripts/lint.sh {{.CLI_ARGS}}
+
+  release:repin:
+    desc: >-
+      After merging to main: re-pin app Dockerfiles to the supported catalog digests, then
+      platform/workloads and the demo fixtures commit to the images built at HEAD, in dependency order;
+      also re-pins the E2E fixture Dockerfiles and Kyverno E2E params to the supported catalog digests;
+      opens a pull request per step that changed something (release-repin.yml runs the same steps
+      automatically on the pushes that can need them)
+    vars:
+      HEAD_SHA:
+        sh: git rev-parse HEAD
+    cmds:
+      - ./scripts/release-repin.sh dockerfiles
+      - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh workloads {{.HEAD_SHA}}
+      - RELEASE_REPIN_TIMEOUT=0 ./scripts/release-repin.sh fixtures {{.HEAD_SHA}}
+      - ./scripts/release-repin.sh e2e-params
+
+  demo:unsigned:
+    desc: 'Submit a pod on an unsigned Harbor image; workload-image-signature denies it (NAMESPACE=<ns>)'
+    cmds:
+      - ./scripts/demo-admission.sh unsigned '{{.NAMESPACE}}'
+
+  demo:foreign-signer:
+    desc: 'Submit a pod on a Harbor image signed by another identity; workload-image-signature denies it'
+    cmds:
+      - ./scripts/demo-admission.sh foreign-signer '{{.NAMESPACE}}'
+
+  demo:non-golden-base:
+    desc: 'Submit a pod on an image built on a base outside the catalog; workload-golden-base denies it'
+    cmds:
+      - ./scripts/demo-admission.sh non-golden-base '{{.NAMESPACE}}'
+
+  demo:deprecated-base:
+    desc: 'Submit a pod on an image built on a deprecated golden image; admitted with a warning'
+    cmds:
+      - ./scripts/demo-admission.sh deprecated-base '{{.NAMESPACE}}'
+
+  demo:eol-base:
+    desc: 'Submit a pod on an image built on an end-of-life golden image; workload-golden-base denies it'
+    cmds:
+      - ./scripts/demo-admission.sh eol-base '{{.NAMESPACE}}'
+
+  demo:direct-dockerhub:
+    desc: 'Submit a pod on a Docker Hub image; workload-registry denies it'
+    cmds:
+      - ./scripts/demo-admission.sh direct-dockerhub '{{.NAMESPACE}}'
+
+  demo:root:
+    desc: 'Submit a pod running as root; Pod Security restricted denies it'
+    cmds:
+      - ./scripts/demo-admission.sh root '{{.NAMESPACE}}'
+
+  demo:runtime-shell:
+    desc: Run a shell in the runtime-demo workload container; Kubescape alerts on it (VictoriaLogs, Grafana)
+    cmds:
+      - ./scripts/demo-runtime-shell.sh
+
+  demo:vex:
+    desc: Replay the Harbor event of a golden image; dt-bridge uploads its DHI VEX, Dependency-Track completes it
+    cmds:
+      - ./scripts/demo-vex.sh

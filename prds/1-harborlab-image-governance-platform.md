@@ -43,7 +43,7 @@
 - At least 16 GiB RAM available to WSL — check: test "$(free -g | awk '/^Mem:/{print $2}')" -ge 16
 
 ## State
-phase: 4
+phase: 5
 milestone: 10/10
 worktree: /home/naqa/harborlab-prd-1-prd-1-harborlab-image-governance-platform
 branch: prd-1-prd-1-harborlab-image-governance-platform
@@ -74,7 +74,6 @@ resumed-m9: human (2026-09-28) chose catalogue A — genuine older golden versio
 notes-m9b: coder 22ad6dc 6892f2b 49142fb 719b9af e9f4b0a — catalog python 3.13 supported, python 3.10 deprecated (tag 3.10-sha-6892f2b), java 21 supported, java 26 eol (genuine non-LTS EOL 2026-09-15, newer than 21: DHI python 3.9 not usable — debian13 401, debian12 fails Trivy CRITICAL); demo:vex root cause = single VEX worker behind replication bursts → 8 workers; policies.yml waits for Kyverno webhook before apply; tester fixtures 16e238a (demo-deprecated-base FROM python 3.10, demo-eol-base FROM java 26); coder next: publish/replicate/wire
 notes-m9c: coder fbc49f5 835a56f — demo_scenarios 2/2 (9 scenarios + negative control), docs 7/7; M9 green next, then pause before review
 review-started: human resumed (2026-09-28) — phase 3; reviewer done (R1–R8, T1–T13 confirmed real), auditor done (A1–A9); plan: tester adds regression tests for testable findings, then coder batches B1 admission/trust (R1 R2 T2 A1 A2 A3 A4), B2 dt-bridge/secrets/network (R3 T7 A5 A6 A7 A8 A9), B3 platform reliability (T4 T8 T9 T10 T11 T13 R7 R8), B4 catalog/renovate/docs (T12 R5 R6 R4 T1 T3); T2 decision: identity main-only by default, current non-main platform revision trusted only when deployed from that branch (env-specific trust, documented); regression tests ade4608 (CAT-F*, all red for the right reason; T3 repository_rules.bats stays red until the human creates the GitHub ruleset); tests amended a980dbf after B1 (run.sh renders policies per revision, demo control ns tier=platform); B2 fixed (fresh task up 1122 s, all platform suites green except harbor_configure which reads values via platform-audit → tester amend); note: old Harbor admin password echoed once in the coder's local session output (bash -x), never committed, rotated by the fresh rebuild; harbor_configure amended 2aa6736 (metadata via platform-audit, robot credential from its ESO Secret) — 5/5 green; B3 fixed (fresh task up 1165 s, memory peak 10708 Mi/12288; lifecycle #1 failed once on an apps-from-ghcr replication during task up, not reproduced in two later runs — watch at final green); B4 fixed (build_workflow 5/5, renovate 2/2, operations_docs 4/4, docs 7/7, catalog 4/4); tests amended 463a449 (fixtures by pinned sha-<commit> via tests/fixtures/fixture-tag.sh; off-list image moved to mcr.microsoft.com to avoid public.ecr.aws quota; Chainsaw to be proven by the next policies.yml CI run); R10 fixed c0dc33a (release-repin.yml + task release:repin); final phase-3 green next; final green 0640bc9 (R10 test) — all suites green incl. lifecycle 3/3 fresh (2942 s), Chainsaw CI run 36487574443; only repository_rules.bats red (human rulesets); R11/R12 raised by the tester; R11/R12 tests a7fea01 — tests/ci+docs 71/71, lint ok. PHASE 3 DONE: all findings fixed except T3 human ruleset
-paused-before-demo: human asked (2026-09-29) — phase 4 not started; resume with /prd-full 1
 pr: none
 findings:
 - T1 fixed 369e0b4 — goharbor provider does not detect drift on harbor_replication filters/description changed out of band (plan empty after manual change; needed -replace) — raised by tester at M3 green
@@ -112,6 +111,10 @@ findings:
 - A9 fixed 8e7df48 — dt-bridge Dockerfile installs uv from PyPI without hashes
 - R9 fixed 9b417ea — ADR 0007 still describes the old main|prd-* identity; needs an amendment/superseding note for main-only + repository binding + environment-specific revision trust (B4)
 demo:
+- P1 artifacts/prd-1/demo/ commit 748a53f (recorded on 3bf4896) 8/8 confirmed
+- P2 artifacts/prd-1/demo/ commit 748a53f 6/6 confirmed
+- P3 artifacts/prd-1/demo/ commit 748a53f 7/7 confirmed — step 6 on retry after Grafana OOMKilled (limit 448Mi) in Explore/VictoriaLogs → Points à arbitrer
+- deviations accepted: web frames at 1280×800 (admin consoles unusable at phone width), Chrome --ignore-certificate-errors (no certutil; browser chrome not in frames)
 
 ## Milestones
 
